@@ -18,9 +18,11 @@ along with CUDAProb3++.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef CUDAPROB3_CPUPROPAGATOR_HPP
 #define CUDAPROB3_CPUPROPAGATOR_HPP
 
+
 #include "constants.hpp"
-#include "physics.hpp"
 #include "propagator.hpp"
+
+#include "physics.hpp"
 
 #include <omp.h>
 #include <vector>
