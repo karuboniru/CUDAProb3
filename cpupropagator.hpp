@@ -19,102 +19,107 @@ along with CUDAProb3++.  If not, see <http://www.gnu.org/licenses/>.
 #define CUDAPROB3_CPUPROPAGATOR_HPP
 
 #include "constants.hpp"
-#include "propagator.hpp"
 #include "physics.hpp"
+#include "propagator.hpp"
 
 #include <omp.h>
 #include <vector>
 
+namespace cudaprob3 {
 
-namespace cudaprob3{
+/// \class CpuPropagator
+/// \brief Multi-threaded CPU neutrino propagation. Derived from Propagator
+/// @param FLOAT_T The floating point type to use for calculations, i.e float,
+/// double
+template <class FLOAT_T> class CpuPropagator : public Propagator<FLOAT_T> {
+public:
+  /// \brief Constructor
+  ///
+  /// @param n_cosines Number cosine bins
+  /// @param n_energies Number of energy bins
+  /// @param threads Number of threads
+  CpuPropagator(int n_cosines, int n_energies, int threads)
+      : Propagator<FLOAT_T>(n_cosines, n_energies) {
 
-    /// \class CpuPropagator
-    /// \brief Multi-threaded CPU neutrino propagation. Derived from Propagator
-    /// @param FLOAT_T The floating point type to use for calculations, i.e float, double
-    template<class FLOAT_T>
-    class CpuPropagator : public Propagator<FLOAT_T>{
-    public:
-        /// \brief Constructor
-        ///
-        /// @param n_cosines Number cosine bins
-        /// @param n_energies Number of energy bins
-        /// @param threads Number of threads
-        CpuPropagator(int n_cosines, int n_energies, int threads) : Propagator<FLOAT_T>(n_cosines, n_energies){
+    resultList.resize(std::uint64_t(n_cosines) * std::uint64_t(n_energies) *
+                      std::uint64_t(9));
 
-            resultList.resize(std::uint64_t(n_cosines) * std::uint64_t(n_energies) * std::uint64_t(9));
+    omp_set_num_threads(threads);
+  }
 
-            omp_set_num_threads(threads);
-        }
+  /// \brief Copy constructor
+  /// @param other
+  CpuPropagator(const CpuPropagator &other) : Propagator<FLOAT_T>(other) {
+    *this = other;
+  }
 
-        /// \brief Copy constructor
-        /// @param other
-        CpuPropagator(const CpuPropagator& other) : Propagator<FLOAT_T>(other){
-            *this = other;
-        }
+  /// \brief Move constructor
+  /// @param other
+  CpuPropagator(CpuPropagator &&other) noexcept : Propagator<FLOAT_T>(other) {
+    *this = std::move(other);
+  }
 
-        /// \brief Move constructor
-        /// @param other
-        CpuPropagator(CpuPropagator&& other)  noexcept : Propagator<FLOAT_T>(other){
-            *this = std::move(other);
-        }
+  /// \brief Copy assignment operator
+  /// @param other
+  CpuPropagator &operator=(const CpuPropagator &other) {
+    Propagator<FLOAT_T>::operator=(other);
 
-        /// \brief Copy assignment operator
-        /// @param other
-        CpuPropagator& operator=(const CpuPropagator& other){
-            Propagator<FLOAT_T>::operator=(other);
+    resultList = other.resultList;
 
-            resultList = other.resultList;
+    return *this;
+  }
 
-            return *this;
-        }
+  /// \brief Move assignment operator
+  /// @param other
+  CpuPropagator &operator=(CpuPropagator &&other) {
+    Propagator<FLOAT_T>::operator=(std::move(other));
 
-        /// \brief Move assignment operator
-        /// @param other
-        CpuPropagator& operator=(CpuPropagator&& other){
-            Propagator<FLOAT_T>::operator=(std::move(other));
+    resultList = std::move(other.resultList);
 
-            resultList = std::move(other.resultList);
+    return *this;
+  }
 
-            return *this;
-        }
+public:
+  void calculateProbabilities(NeutrinoType type) override {
+    if (!this->isInit)
+      throw std::runtime_error(
+          "CpuPropagator::calculateProbabilities. Object has been moved from.");
+    if (!this->isSetProductionHeight)
+      throw std::runtime_error("CpuPropagator::calculateProbabilities. "
+                               "production height was not set");
 
-    public:
+    // set neutrino parameters for core physics functions
+    physics::setMixMatrix_host(this->Mix_U.data());
+    physics::setMassDifferences_host(this->dm.data());
 
-        void calculateProbabilities(NeutrinoType type) override{
-            if(!this->isInit)
-                throw std::runtime_error("CpuPropagator::calculateProbabilities. Object has been moved from.");
-            if(!this->isSetProductionHeight)
-                throw std::runtime_error("CpuPropagator::calculateProbabilities. production height was not set");
+    physics::calculate(type, this->cosineList.data(), this->cosineList.size(),
+                       this->energyList.data(), this->energyList.size(),
+                       this->radii.data(), this->rhos.data(),
+                       this->maxlayers.data(),
+                       this->ProductionHeightinCentimeter, resultList.data());
+  }
 
-            // set neutrino parameters for core physics functions
-            physics::setMixMatrix_host(this->Mix_U.data());
-            physics::setMassDifferences_host(this->dm.data());
+  FLOAT_T getProbability(int index_cosine, int index_energy,
+                         ProbType t) override {
+    if (index_cosine >= this->n_cosines || index_energy >= this->n_energies) {
+      // std::cerr << std::format("{} > {} or", index_cosine, this->n_cosines)
+      //           << std::endl;
+      // std::cerr << std::format("{} > {}", index_energy, this->n_energies);
+      throw std::runtime_error(
+          "CpuPropagator::getProbability. Invalid indices");
+    }
 
-            physics::calculate(type, this->cosineList.data(), this->cosineList.size(),
-                this->energyList.data(), this->energyList.size(), this->radii.data(), this->rhos.data(), this->maxlayers.data(), this->ProductionHeightinCentimeter, resultList.data());
-        }
+    std::uint64_t index = std::uint64_t(index_cosine) *
+                              std::uint64_t(this->n_energies) *
+                              std::uint64_t(9) +
+                          std::uint64_t(index_energy) * std::uint64_t(9);
+    return resultList[index + int(t)];
+  }
 
-        FLOAT_T getProbability(int index_cosine, int index_energy, ProbType t) override{
-          if (index_cosine >= this->n_cosines ||
-              index_energy >= this->n_energies) {
-            // std::cerr << std::format("{} > {} or", index_cosine, this->n_cosines)
-            //           << std::endl;
-            // std::cerr << std::format("{} > {}", index_energy, this->n_energies);
-            throw std::runtime_error(
-                "CpuPropagator::getProbability. Invalid indices");
-          }
+private:
+  std::vector<FLOAT_T> resultList;
+};
 
-            std::uint64_t index = std::uint64_t(index_cosine) * std::uint64_t(this->n_energies) * std::uint64_t(9)
-                    + std::uint64_t(index_energy) * std::uint64_t(9);
-            return resultList[index + int(t)];
-        }
-
-    private:
-        std::vector<FLOAT_T> resultList;
-    };
-
-
-
-}
+} // namespace cudaprob3
 
 #endif

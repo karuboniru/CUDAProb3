@@ -20,27 +20,25 @@ along with CUDAProb3++.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "hpc_helpers.cuh"
 
-namespace cudaprob3{
+namespace cudaprob3 {
 
-    template<typename FLOAT_T>
-    struct Constants{
-        HOSTDEVICEQUALIFIER
-        static constexpr FLOAT_T tworttwoGf(){ return 1.52588e-4; }
+template <typename FLOAT_T> struct Constants {
+  HOSTDEVICEQUALIFIER
+  static constexpr FLOAT_T tworttwoGf() { return 1.52588e-4; }
 
-        HOSTDEVICEQUALIFIER
-        static constexpr FLOAT_T km2cm(){ return 1.0e5; }
+  HOSTDEVICEQUALIFIER
+  static constexpr FLOAT_T km2cm() { return 1.0e5; }
 
-        HOSTDEVICEQUALIFIER
-        static constexpr FLOAT_T REarth(){ return 6371.0; }
+  HOSTDEVICEQUALIFIER
+  static constexpr FLOAT_T REarth() { return 6371.0; }
 
-        HOSTDEVICEQUALIFIER
-        static constexpr FLOAT_T REarthcm(){ return REarth() * km2cm(); }
+  HOSTDEVICEQUALIFIER
+  static constexpr FLOAT_T REarthcm() { return REarth() * km2cm(); }
 
-        HOSTDEVICEQUALIFIER
-        static constexpr FLOAT_T density_convert(){ return 0.5; }
-    };
+  HOSTDEVICEQUALIFIER
+  static constexpr FLOAT_T density_convert() { return 0.5; }
+};
 
-}
-
+} // namespace cudaprob3
 
 #endif

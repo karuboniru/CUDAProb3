@@ -25,127 +25,110 @@ along with CUDAProb3++.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <memory>
 
+struct CudaDeleter {
+  int deviceId;
 
-struct CudaDeleter
-{
-	int deviceId;
+  CudaDeleter() {}
 
-	CudaDeleter(){}
+  CudaDeleter(const CudaDeleter &other) { *this = other; }
 
-	CudaDeleter(const CudaDeleter& other){
-		*this = other;
-	}
+  CudaDeleter(const CudaDeleter &&other) { *this = std::move(other); }
 
-	CudaDeleter(const CudaDeleter&& other){
-		*this = std::move(other);
-	}
+  CudaDeleter(int id) : deviceId(id) {}
 
-	CudaDeleter(int id):deviceId(id){}
+  CudaDeleter &operator=(const CudaDeleter &other) {
+    deviceId = other.deviceId;
+    return *this;
+  }
 
-	CudaDeleter& operator=(const CudaDeleter& other){
-		deviceId = other.deviceId;
-		return *this;
-	}
+  CudaDeleter &operator=(const CudaDeleter &&other) {
+    deviceId = other.deviceId;
+    return *this;
+  }
 
-	CudaDeleter& operator=(const CudaDeleter&& other){
-		deviceId = other.deviceId;
-		return *this;
-	}
+  void operator()(void *p) {
+    cudaSetDevice(deviceId);
+    CUERR;
+    cudaFree(p); // CUERR;
 
-	void operator()(void *p){
-		cudaSetDevice(deviceId); CUERR;
-		cudaFree(p);// CUERR;
-
-        cudaError_t err;
-        if ((err = cudaGetLastError()) != cudaSuccess) {
-            std::cout << "CUDA error: " << cudaGetErrorString(err) << " : "
-                      << __FILE__ << ", line " << __LINE__ << std::endl;
-        }
-	}
+    cudaError_t err;
+    if ((err = cudaGetLastError()) != cudaSuccess) {
+      std::cout << "CUDA error: " << cudaGetErrorString(err) << " : "
+                << __FILE__ << ", line " << __LINE__ << std::endl;
+    }
+  }
 };
 
-struct PinnedCudaDeleter
-{
-	void operator()(void *p){
-		cudaFreeHost(p); CUERR;
-	}
+struct PinnedCudaDeleter {
+  void operator()(void *p) {
+    cudaFreeHost(p);
+    CUERR;
+  }
 };
 
+template <class T> using unique_dev_ptr = std::unique_ptr<T, CudaDeleter>;
 
-
-
-template <class T>
-using unique_dev_ptr = std::unique_ptr<T, CudaDeleter>;
-
-template <class T>
-using shared_dev_ptr = std::shared_ptr<T>;
+template <class T> using shared_dev_ptr = std::shared_ptr<T>;
 
 template <class T>
 using unique_pinned_ptr = std::unique_ptr<T, PinnedCudaDeleter>;
 
-template <class T>
-using shared_pinned_ptr = std::shared_ptr<T>;
-
-
-
+template <class T> using shared_pinned_ptr = std::shared_ptr<T>;
 
 template <class T>
-unique_dev_ptr<T> make_unique_dev(int deviceId, std::uint64_t elements){
-	cudaSetDevice(deviceId); CUERR;
+unique_dev_ptr<T> make_unique_dev(int deviceId, std::uint64_t elements) {
+  cudaSetDevice(deviceId);
+  CUERR;
 
-	T* mem = nullptr;
+  T *mem = nullptr;
 
-	cudaMalloc(&mem, sizeof(T) * elements); CUERR;
+  cudaMalloc(&mem, sizeof(T) * elements);
+  CUERR;
 
-	return unique_dev_ptr<T>(mem, CudaDeleter{deviceId});
+  return unique_dev_ptr<T>(mem, CudaDeleter{deviceId});
 }
 
 template <class T>
-shared_dev_ptr<T> make_shared_dev(int deviceId, std::uint64_t elements){
-	cudaSetDevice(deviceId); CUERR;
+shared_dev_ptr<T> make_shared_dev(int deviceId, std::uint64_t elements) {
+  cudaSetDevice(deviceId);
+  CUERR;
 
-	T* mem = nullptr;
+  T *mem = nullptr;
 
-	cudaMalloc(&mem, sizeof(T) * elements); CUERR;
+  cudaMalloc(&mem, sizeof(T) * elements);
+  CUERR;
 
-	return shared_dev_ptr<T>(mem, CudaDeleter{deviceId});
+  return shared_dev_ptr<T>(mem, CudaDeleter{deviceId});
 }
 
 template <class T>
-unique_pinned_ptr<T> make_unique_pinned(std::uint64_t elements){
-	T* mem = nullptr;
+unique_pinned_ptr<T> make_unique_pinned(std::uint64_t elements) {
+  T *mem = nullptr;
 
-	cudaMallocHost(&mem, sizeof(T) * elements); CUERR;
+  cudaMallocHost(&mem, sizeof(T) * elements);
+  CUERR;
 
-	return unique_pinned_ptr<T>(mem, PinnedCudaDeleter{});
+  return unique_pinned_ptr<T>(mem, PinnedCudaDeleter{});
 }
 
 template <class T>
-shared_pinned_ptr<T> make_shared_pinned(std::uint64_t elements){
-	T* mem = nullptr;
+shared_pinned_ptr<T> make_shared_pinned(std::uint64_t elements) {
+  T *mem = nullptr;
 
-	cudaMallocHost(&mem, sizeof(T) * elements); CUERR;
+  cudaMallocHost(&mem, sizeof(T) * elements);
+  CUERR;
 
-	return shared_pinned_ptr<T>(mem, PinnedCudaDeleter{});
+  return shared_pinned_ptr<T>(mem, PinnedCudaDeleter{});
 }
-
-
 
 // wrap existing device pointer into unique pointer
-template <class T>
-unique_dev_ptr<T> make_unique_dev(int deviceId, T* ptr){
-	return std::unique_ptr<T, CudaDeleter>(ptr, CudaDeleter{deviceId});
+template <class T> unique_dev_ptr<T> make_unique_dev(int deviceId, T *ptr) {
+  return std::unique_ptr<T, CudaDeleter>(ptr, CudaDeleter{deviceId});
 }
 
 // wrap existing device pointer into shared pointer
-template <class T>
-shared_dev_ptr<T> make_shared_dev(int deviceId, T* ptr){
-	return std::shared_ptr<T>(ptr, CudaDeleter{deviceId});
+template <class T> shared_dev_ptr<T> make_shared_dev(int deviceId, T *ptr) {
+  return std::shared_ptr<T>(ptr, CudaDeleter{deviceId});
 }
-
-
-
-
-
 
 #endif
