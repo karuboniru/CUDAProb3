@@ -20,7 +20,9 @@ along with CUDAProb3++.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "constants.hpp"
 #include "math.hpp"
+#include "types.hpp"
 
+#include <cmath>
 #include <string.h>
 #include <stdio.h>
 //#include <math.h>
@@ -111,7 +113,7 @@ namespace cudaprob3{
             * Constant global data
             */
 
-            #ifdef __NVCC__
+            #ifdef __CUDA__
                 __constant__ double mix_data_device [9 * sizeof(math::ComplexNumber<double>)] ;
                 __constant__ double mass_data_device[9];
                 __constant__ double A_X_factor_device[81 * 4]; //precomputed factors which only depend on the mixing matrix for faster calculation
@@ -144,7 +146,7 @@ namespace cudaprob3{
                         }
                     }
                 }
-                #ifdef __NVCC__
+                #ifdef __CUDA__
                     //copy to constant memory on GPU
                     cudaMemcpyToSymbol(mix_data_device, U, sizeof(math::ComplexNumber<FLOAT_T>) * 9, 0, H2D); CUERR;
                     cudaMemcpyToSymbol(A_X_factor_device, A_X_factor, sizeof(FLOAT_T) * 81 * 4, 0, H2D); CUERR;
@@ -180,7 +182,7 @@ namespace cudaprob3{
             template<typename FLOAT_T>
             void setMassDifferences(FLOAT_T* dm){
                 memcpy((FLOAT_T*)mass_data, dm, sizeof(FLOAT_T) * 9);
-                #ifdef __NVCC__
+                #ifdef __CUDA__
                 cudaMemcpyToSymbol(mass_data_device, dm, sizeof(FLOAT_T) * 9 , 0, cudaMemcpyHostToDevice); CUERR;
                 #endif
             }
@@ -247,7 +249,7 @@ namespace cudaprob3{
                 }
                 memcpy(mass_order, order, sizeof(int) * 3);
 
-                #ifdef __NVCC__
+                #ifdef __CUDA__
                 cudaMemcpyToSymbol(mass_order_device, order, sizeof(int) * 3, 0, cudaMemcpyHostToDevice); CUERR;
                 #endif
             }
@@ -300,7 +302,7 @@ namespace cudaprob3{
                 /* Equation (21) */
                 const FLOAT_T argtmp = (2.0*alpha*alpha*alpha-9.0*alpha*beta+27.0*gamma)/
                     (2.0*sqrt(tmp*tmp*tmp));
-                const FLOAT_T arg = [&](){
+                const FLOAT_T arg = [&]() -> FLOAT_T {
                     if (fabs(argtmp)>1.0)
                         return argtmp/fabs(argtmp);
                     else
@@ -325,14 +327,20 @@ namespace cudaprob3{
 
                 /* Sort according to which reproduce the vaccum eigenstates */
 
-                UNROLLQUALIFIER
+                #ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
                 for (int i=0; i<3; i++) {
                     mMat[i] = mMatU[ORDER(i)];
                 }
 
-                UNROLLQUALIFIER
+                #ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
                 for (int i=0; i<3; i++) {
-                    UNROLLQUALIFIER
+                    #ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
                     for (int j=0; j<3; j++) {
                         d_dmMatMat[i][j] = mMat[i] - mMat[j];
                         d_dmMatVac[i][j] = mMat[i] - DM(j,0);
@@ -358,9 +366,13 @@ namespace cudaprob3{
                 }();
 
                 /* Calculate the matrix 2EH-M_j */
-                UNROLLQUALIFIER
+                #ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
                 for (int n=0; n<3; n++) {
-                    UNROLLQUALIFIER
+                    #ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
                     for (int m=0; m<3; m++) {
                         twoEHmM[n][m][0].re = -fac*(U(0,n).re*U(0,m).re+U(0,n).im*U(0,m).im);
                         twoEHmM[n][m][0].im = -fac*(U(0,n).re*U(0,m).im-U(0,n).im*U(0,m).re);
@@ -371,7 +383,9 @@ namespace cudaprob3{
                     }
                 }
 
-                UNROLLQUALIFIER
+                #ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
                 for (int j=0; j<3; j++){
                     twoEHmM[0][0][j].re-= d_dmMatVac[j][0];
                     twoEHmM[1][1][j].re-= d_dmMatVac[j][1];
@@ -380,11 +394,17 @@ namespace cudaprob3{
 
                 /* Calculate the product in eq.(11) of twoEHmM for j!=k */
                 //memset(product, 0, 3*3*3*sizeof(math::ComplexNumber<FLOAT_T>));
-                UNROLLQUALIFIER
+                #ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
                 for (int i=0; i<3; i++) {
-                    UNROLLQUALIFIER
+                    #ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
                     for (int j=0; j<3; j++) {
-                        UNROLLQUALIFIER
+                        #ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
                         for (int k=0; k<3; k++) {
                             product[i][j][k].re = 0;
                             product[i][j][k].im = 0;
@@ -392,11 +412,17 @@ namespace cudaprob3{
                     }
                 }
 
-                UNROLLQUALIFIER
+                #ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
                 for (int i=0; i<3; i++) {
-                    UNROLLQUALIFIER
+                    #ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
                     for (int j=0; j<3; j++) {
-                        UNROLLQUALIFIER
+                        #ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
                         for (int k=0; k<3; k++) {
                             product[i][j][0].re +=
                                 twoEHmM[i][k][1].re*twoEHmM[k][j][2].re -
@@ -448,16 +474,22 @@ namespace cudaprob3{
 
                 /* Make the sum with the exponential factor in Eq. (11) */
                 //memset(X, 0, 3*3*sizeof(math::ComplexNumber<FLOAT_T>));
-                UNROLLQUALIFIER
+                #ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
                 for (int i=0; i<3; i++) {
-                    UNROLLQUALIFIER
+                    #ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
                     for (int j=0; j<3; j++) {
                         X[i][j].re = 0;
                         X[i][j].im = 0;
                     }
                 }
 
-                UNROLLQUALIFIER
+                #ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
                 for (int k=0; k<3; k++) {
                     const FLOAT_T arg = [&](){
                         if( k == 2)
@@ -473,9 +505,13 @@ namespace cudaprob3{
                     const FLOAT_T s = sin(arg);
                     const FLOAT_T c = cos(arg);
 #endif
-                    UNROLLQUALIFIER
+                    #ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
                     for (int i=0; i<3; i++) {
-                        UNROLLQUALIFIER
+                        #ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
                         for (int j=0; j<3; j++) {
                             X[i][j].re += c*product[i][j][k].re - s*product[i][j][k].im;
                             X[i][j].im += c*product[i][j][k].im + s*product[i][j][k].re;
@@ -486,22 +522,34 @@ namespace cudaprob3{
                 /* Eq. (10)*/
                 //memset(A, 0, 3*3*2*sizeof(FLOAT_T));
 
-                UNROLLQUALIFIER
+                #ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
                 for (int n=0; n<3; n++) {
-                    UNROLLQUALIFIER
+                    #ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
                     for (int m=0; m<3; m++) {
                         A[n][m].re = 0;
                         A[n][m].im = 0;
                     }
                 }
 
-                UNROLLQUALIFIER
+                #ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
                 for (int n=0; n<3; n++) {
-                    UNROLLQUALIFIER
+                    #ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
                     for (int m=0; m<3; m++) {
-                        UNROLLQUALIFIER
+                        #ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
                         for (int i=0; i<3; i++) {
-                            UNROLLQUALIFIER
+                            #ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
                             for (int j=0; j<3; j++) {
                                 // use precomputed factors
                                 A[n][m].re +=
@@ -632,9 +680,13 @@ namespace cudaprob3{
                         const FLOAT_T energy = energylist[index_energy];
 
                         // set TransitionMatrixCoreToMantle to unit matrix
-                        UNROLLQUALIFIER
+                        #ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
                         for(int i = 0; i < 3; i++){
-                            UNROLLQUALIFIER
+                            #ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
                             for(int j = 0; j < 3; j++){
                                     TransitionMatrixCoreToMantle[i][j].re = (i == j ? 1.0 : 0.0);
                                     TransitionMatrixCoreToMantle[i][j].im = 0.0;
@@ -679,9 +731,13 @@ namespace cudaprob3{
                         // for oscillation probabilities where the initial wave function
                         // evaluates to 0+0i for two flavors and evaluates to 1+0i for the remaining third flavor,
                         // we don't need to perform full matrix vector multiplication
-                        UNROLLQUALIFIER
+                        #ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
                         for (int inflv = 0 ; inflv < 3 ; inflv++ ){
-                            UNROLLQUALIFIER
+                            #ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
                             for (int outflv = 0 ; outflv < 3 ; outflv++ ){
                                 const FLOAT_T re = finalTransitionMatrix[outflv][inflv].re;
                                 const FLOAT_T im = finalTransitionMatrix[outflv][inflv].im;
@@ -702,7 +758,7 @@ namespace cudaprob3{
             }
 
 
-            #ifdef __NVCC__
+            #ifdef __CUDA__
             template<typename FLOAT_T>
             KERNEL
             __launch_bounds__( 64, 8 )

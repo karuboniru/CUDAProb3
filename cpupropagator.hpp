@@ -54,7 +54,7 @@ namespace cudaprob3{
 
         /// \brief Move constructor
         /// @param other
-        CpuPropagator(CpuPropagator&& other) : Propagator<FLOAT_T>(other){
+        CpuPropagator(CpuPropagator&& other)  noexcept : Propagator<FLOAT_T>(other){
             *this = std::move(other);
         }
 
@@ -95,8 +95,14 @@ namespace cudaprob3{
         }
 
         FLOAT_T getProbability(int index_cosine, int index_energy, ProbType t) override{
-            if(index_cosine >= this->n_cosines || index_energy >= this->n_energies)
-                throw std::runtime_error("CpuPropagator::getProbability. Invalid indices");
+          if (index_cosine >= this->n_cosines ||
+              index_energy >= this->n_energies) {
+            // std::cerr << std::format("{} > {} or", index_cosine, this->n_cosines)
+            //           << std::endl;
+            // std::cerr << std::format("{} > {}", index_energy, this->n_energies);
+            throw std::runtime_error(
+                "CpuPropagator::getProbability. Invalid indices");
+          }
 
             std::uint64_t index = std::uint64_t(index_cosine) * std::uint64_t(this->n_energies) * std::uint64_t(9)
                     + std::uint64_t(index_energy) * std::uint64_t(9);

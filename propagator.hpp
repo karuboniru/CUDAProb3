@@ -55,39 +55,23 @@ namespace cudaprob3{
 
         /// \brief Copy constructor
         /// @param other
-        Propagator(const Propagator& other){
+        Propagator(const Propagator& other) : n_cosines(other.n_cosines), n_energies(other.n_energies){
             *this = other;
         }
 
         /// \brief Move constructor
         /// @param other
-        Propagator(Propagator&& other){
+        Propagator(Propagator&& other) noexcept : n_cosines(other.n_cosines), n_energies(other.n_energies){
             *this = std::move(other);
         }
 
         /// \brief Copy assignment operator
         /// @param other
-        Propagator& operator=(const Propagator& other){
-            energyList = other.energyList;
-            cosineList = other.cosineList;
-            maxlayers = other.maxlayers;
-            radii = other.radii;
-            rhos = other.rhos;
-            coslimit = other.coslimit;
-            Mix_U = other.Mix_U;
-            dm = other.dm;
-
-            ProductionHeightinCentimeter = other.ProductionHeightinCentimeter;
-            isSetCosine = other.isSetCosine;
-            isSetProductionHeight = other.isSetProductionHeight;
-            isInit = other.isInit;
-
-            return *this;
-        }
+        Propagator& operator=(const Propagator& other)= default;
 
         /// \brief Move assignment operator
         /// @param other
-        Propagator& operator=(Propagator&& other){
+        Propagator& operator=(Propagator&& other) noexcept {
             energyList = std::move(other.energyList);
             cosineList = std::move(other.cosineList);
             maxlayers = std::move(other.maxlayers);
@@ -104,8 +88,13 @@ namespace cudaprob3{
 
             other.isInit = false;
 
+            n_cosines = other.n_cosines;
+            n_energies = other.n_energies;
+            
             return *this;
         }
+
+        virtual ~Propagator() = default;
 
     public:
         /// \brief Set density information from arrays.

@@ -102,11 +102,15 @@ along with CUDAProb3++.  If not, see <http://www.gnu.org/licenses/>.
 #endif
 
 
-#ifdef __CUDA_ARCH__
-    #define UNROLLQUALIFIER #pragma unroll
-#else
-    #define UNROLLQUALIFIER
-#endif
+// #ifdef __CUDA_ARCH__
+//     #define #ifdef __CUDA_ARCH__
+// #pragma unroll
+// #endif #pragma unroll
+// #else
+//     #define #ifdef __CUDA_ARCH__
+// #pragma unroll
+// #endif
+// #endif
 
 // safe division
 #define SDIV(x,y)(((x)+(y)-1)/(y))
