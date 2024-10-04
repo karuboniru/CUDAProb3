@@ -660,6 +660,34 @@ HOSTDEVICEQUALIFIER FLOAT_T getTraversedDistanceOfLayer(
     return CrossThis * (Constants<FLOAT_T>::km2cm());
   }
 }
+template <typename FLOAT_T>
+void fill_rebin_result(size_t n_energy, size_t n_costh, size_t rebin_factor,
+                       FLOAT_T *input, FLOAT_T *rebin_result) {
+  auto bound_rebin_costh = n_costh / rebin_factor;
+#pragma omp parallel for schedule(dynamic)
+  for (size_t i_energy = 0; i_energy < n_energy; i_energy++) {
+#pragma omp parallel for schedule(dynamic)
+    for (size_t i_costh_out = 0; i_costh_out < bound_rebin_costh;
+         i_costh_out++) {
+#pragma omp parallel for schedule(dynamic)
+      for (size_t inflv = 0; inflv < 3; inflv++) {
+#pragma omp parallel for schedule(dynamic)
+        for (size_t outflv = 0; outflv < 3; outflv++) {
+          // float sum{};
+          auto &&out = rebin_result[i_costh_out * n_energy * 9 + i_energy * 9 +
+                                    inflv * 3 + outflv];
+          out = 0.;
+          for (size_t i_rebin{}; i_rebin < rebin_factor; i_rebin++) {
+            auto i_costh = i_costh_out * rebin_factor + i_rebin;
+            out += input[i_costh * n_energy * 9 + i_energy * 9 + inflv * 3 +
+                         outflv] /
+                   rebin_factor;
+          }
+        }
+      }
+    }
+  }
+}
 
 template <typename FLOAT_T>
 HOSTDEVICEQUALIFIER void
@@ -820,18 +848,22 @@ calculate(NeutrinoType type, const FLOAT_T *const cosinelist, int n_cosines,
           result[resultIndex + (unsigned long long)((inflv * 3 + outflv))] =
               re * re + im * im;
 
-          const unsigned long long resultIndex_rebin =
-              (unsigned long long)(rebin_costh_index) *
-                  (unsigned long long)(n_energies) * (unsigned long long)(9) +
-              (unsigned long long)(index_energy) * (unsigned long long)(9);
-          rebin_result[resultIndex +
-                       (unsigned long long)((inflv * 3 + outflv))] +=
-              (re * re + im * im) / rebin_factor;
+          // const unsigned long long resultIndex_rebin =
+          //     (unsigned long long)(rebin_costh_index) *
+          //         (unsigned long long)(n_energies) * (unsigned long long)(9)
+          //         +
+          //     (unsigned long long)(index_energy) * (unsigned long long)(9);
+          // rebin_result[resultIndex_rebin +
+          //              (unsigned long long)((inflv * 3 + outflv))] +=
+          //     (re * re + im * im) / rebin_factor;
 #endif
         }
       }
     }
   }
+#ifndef __CUDA__
+  fill_rebin_result(n_energies, n_cosines, rebin_factor, result, rebin_result);
+#endif
 }
 
 #ifdef __CUDA__
