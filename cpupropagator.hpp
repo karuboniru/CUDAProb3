@@ -18,7 +18,6 @@ along with CUDAProb3++.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef CUDAPROB3_CPUPROPAGATOR_HPP
 #define CUDAPROB3_CPUPROPAGATOR_HPP
 
-
 #include "constants.hpp"
 #include "propagator.hpp"
 
@@ -40,11 +39,15 @@ public:
   /// @param n_cosines Number cosine bins
   /// @param n_energies Number of energy bins
   /// @param threads Number of threads
-  CpuPropagator(int n_cosines, int n_energies, int threads)
-      : Propagator<FLOAT_T>(n_cosines, n_energies) {
+  CpuPropagator(int n_cosines, int n_energies, int threads,
+                size_t costh_rebin_factor = 50)
+      : Propagator<FLOAT_T>(n_cosines, n_energies, costh_rebin_factor) {
 
     resultList.resize(std::uint64_t(n_cosines) * std::uint64_t(n_energies) *
                       std::uint64_t(9));
+    resultList_costh_rebined.resize(
+        std::uint64_t(n_cosines) * std::uint64_t(n_energies) *
+        std::uint64_t(9) / this->rebin_factor_costh);
 
     omp_set_num_threads(threads);
   }
@@ -67,6 +70,7 @@ public:
     Propagator<FLOAT_T>::operator=(other);
 
     resultList = other.resultList;
+    resultList_costh_rebined = other.resultList_costh_rebined;
 
     return *this;
   }
@@ -77,6 +81,7 @@ public:
     Propagator<FLOAT_T>::operator=(std::move(other));
 
     resultList = std::move(other.resultList);
+    resultList_costh_rebined = std::move(other.resultList_costh_rebined);
 
     return *this;
   }
@@ -93,24 +98,18 @@ public:
     // set neutrino parameters for core physics functions
     physics::setMixMatrix_host(this->Mix_U.data());
     physics::setMassDifferences_host(this->dm.data());
-
+    memset(resultList_costh_rebined.data(), 0,
+           resultList_costh_rebined.size() * sizeof(FLOAT_T));
     physics::calculate(type, this->cosineList.data(), this->cosineList.size(),
                        this->energyList.data(), this->energyList.size(),
                        this->radii.data(), this->rhos.data(),
                        this->maxlayers.data(),
                        this->ProductionHeightinCentimeter, resultList.data());
+    resultList_costh_rebined_init = false;
   }
 
   FLOAT_T getProbability(int index_cosine, int index_energy,
                          ProbType t) override {
-    if (index_cosine >= this->n_cosines || index_energy >= this->n_energies) {
-      // std::cerr << std::format("{} > {} or", index_cosine, this->n_cosines)
-      //           << std::endl;
-      // std::cerr << std::format("{} > {}", index_energy, this->n_energies);
-      throw std::runtime_error(
-          "CpuPropagator::getProbability. Invalid indices");
-    }
-
     std::uint64_t index = std::uint64_t(index_cosine) *
                               std::uint64_t(this->n_energies) *
                               std::uint64_t(9) +
@@ -118,8 +117,38 @@ public:
     return resultList[index + int(t)];
   }
 
+  FLOAT_T getProbabilityRebin(int index_cosine, int index_energy, ProbType t) {
+    // const auto index_cosine_rebined = index_cosine;
+    const auto n_cosines_rebined = this->n_cosines / this->rebin_factor_costh;
+    if (!resultList_costh_rebined_init) [[unlikely]] {
+      memset(resultList_costh_rebined.data(), 0,
+             resultList_costh_rebined.size() * sizeof(FLOAT_T));
+      for (int i = 0; i < this->n_cosines; i++) {
+        auto i_rebined = i / this->rebin_factor_costh;
+        for (int j = 0; j < this->n_energies; j++) {
+          for (int k = 0; k < 9; k++) {
+            resultList_costh_rebined[std::uint64_t(i_rebined) *
+                                         std::uint64_t(this->n_energies) *
+                                         std::uint64_t(9) +
+                                     std::uint64_t(j) * std::uint64_t(9) + k] +=
+                resultList[std::uint64_t(i) * std::uint64_t(this->n_energies) *
+                               std::uint64_t(9) +
+                           std::uint64_t(j) * std::uint64_t(9) + k] / this->rebin_factor_costh;
+          }
+        }
+      }
+      resultList_costh_rebined_init = true;
+    }
+    return resultList_costh_rebined
+        [std::uint64_t(index_cosine) * std::uint64_t(this->n_energies) *
+             std::uint64_t(9) +
+         std::uint64_t(index_energy) * std::uint64_t(9) + int(t)];
+  }
+
 private:
   std::vector<FLOAT_T> resultList;
+  std::vector<FLOAT_T> resultList_costh_rebined;
+  bool resultList_costh_rebined_init{false};
 };
 
 } // namespace cudaprob3

@@ -784,7 +784,6 @@ calculate(NeutrinoType type, const FLOAT_T *const cosinelist, int n_cosines,
         for (int outflv = 0; outflv < 3; outflv++) {
           const FLOAT_T re = finalTransitionMatrix[outflv][inflv].re;
           const FLOAT_T im = finalTransitionMatrix[outflv][inflv].im;
-
 #ifdef __CUDA_ARCH__
           const unsigned long long resultIndex =
               (unsigned long long)(n_energies) *

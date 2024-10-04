@@ -15,8 +15,8 @@ You should have received a copy of the GNU Lesser General Public License
 along with CUDAProb3++.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifdef __CUDA__ // change this to ifndef __CUDA__ before running doxygen.
-                // otherwise both classes are not included in the documentation
+// #ifdef __CUDA__ // change this to ifndef __CUDA__ before running doxygen.
+// otherwise both classes are not included in the documentation
 
 #ifndef CUDAPROB3_CUDAPROPAGATOR_HPP
 #define CUDAPROB3_CUDAPROPAGATOR_HPP
@@ -48,8 +48,10 @@ public:
   /// @param id device id of the GPU to use
   /// @param n_cosines_ Number cosine bins
   /// @param n_energies_ Number of energy bins
-  CudaPropagatorSingle(int id, int n_cosines_, int n_energies_)
-      : Propagator<FLOAT_T>(n_cosines_, n_energies_), deviceId(id) {
+  CudaPropagatorSingle(int id, int n_cosines_, int n_energies_,
+                       size_t rebin_factor_costh_)
+      : Propagator<FLOAT_T>(n_cosines_, n_energies_, rebin_factor_costh_),
+        deviceId(id) {
 
     int nDevices;
 
@@ -93,6 +95,8 @@ public:
                       std::uint64_t(9));
     CUERR;
     d_maxlayers = make_unique_dev<int>(deviceId, this->n_cosines);
+    resultArray_Rebin = std::make_unique<FLOAT_T[]>(
+        n_energies_ * 9 * n_cosines_ / rebin_factor_costh_);
   }
 
   /// \brief Constructor which uses device id 0
@@ -194,9 +198,9 @@ public:
   // get oscillation weight for specific cosine and energy
   FLOAT_T getProbability(int index_cosine, int index_energy,
                          ProbType t) override {
-    if (index_cosine >= this->n_cosines || index_energy >= this->n_energies)
-      throw std::runtime_error(
-          "CudaPropagatorSingle::getProbability. Invalid indices");
+    // if (index_cosine >= this->n_cosines || index_energy >= this->n_energies)
+    //   throw std::runtime_error(
+    //       "CudaPropagatorSingle::getProbability. Invalid indices");
 
     if (!resultsResideOnHost) {
       getResultFromDevice();
@@ -211,6 +215,45 @@ public:
                                  std::uint64_t(this->n_cosines);
 
     return resultList.get()[index + offset];
+  }
+
+  FLOAT_T getProbabilityRebin(int index_cosine, int index_energy, ProbType t) {
+    if (!resultArray_Rebin_initialized) [[unlikely]] {
+      if (!resultsResideOnHost) {
+        getResultFromDevice();
+        resultsResideOnHost = true;
+      }
+      resultArray_Rebin_initialized = true;
+      memset(resultArray_Rebin.get(), 0,
+             sizeof(FLOAT_T) * std::uint64_t(9) *
+                 std::uint64_t(this->n_energies) *
+                 std::uint64_t(this->n_cosines) /
+                 std::uint64_t(this->rebin_factor_costh));
+      for (size_t t = 0; t < 9; t++) {
+        for (size_t i = 0; i < this->n_cosines; i++) {
+          auto this_cos_bin = i / this->rebin_factor_costh;
+          for (size_t j = 0; j < this->n_energies; j++) {
+            auto rawoffset = std::uint64_t(t) *
+                             std::uint64_t(this->n_energies) *
+                             std::uint64_t(this->n_cosines);
+            auto rawindex = i * this->n_energies + j;
+            auto thisoffset = std::uint64_t(t) *
+                              std::uint64_t(this->n_energies) *
+                              std::uint64_t(this->n_cosines) /
+                              std::uint64_t(this->rebin_factor_costh);
+            auto thisindex = this_cos_bin * this->n_energies + j;
+            resultArray_Rebin[thisoffset + thisindex] +=
+                resultList.get()[rawoffset + rawindex] /
+                this->rebin_factor_costh;
+          }
+        }
+      }
+    }
+    auto thisindex = index_cosine * this->n_energies + index_energy;
+    auto thisoffset = std::uint64_t(t) * std::uint64_t(this->n_energies) *
+                      std::uint64_t(this->n_cosines) /
+                      std::uint64_t(this->rebin_factor_costh);
+    return resultArray_Rebin[thisoffset + thisindex];
   }
 
 protected:
@@ -232,6 +275,7 @@ protected:
                                "production height was not set");
 
     resultsResideOnHost = false;
+    resultArray_Rebin_initialized = false;
     cudaSetDevice(deviceId);
     CUERR;
 
@@ -248,7 +292,6 @@ protected:
         SDIV(this->energyList.size(), block.x) * this->cosineList.size();
 
     dim3 grid(blocks, 1, 1);
-
     physics::callCalculateKernelAsync(
         grid, block, stream, type, d_cosine_list.get(), this->n_cosines,
         d_energy_list.get(), this->n_energies, d_radii.get(), d_rhos.get(),
@@ -281,6 +324,8 @@ protected:
 
 private:
   unique_pinned_ptr<FLOAT_T> resultList;
+  std::unique_ptr<FLOAT_T[]> resultArray_Rebin;
+  bool resultArray_Rebin_initialized = false;
 
   unique_dev_ptr<FLOAT_T> d_rhos;
   unique_dev_ptr<FLOAT_T> d_radii;
@@ -512,4 +557,4 @@ private:
 
 #endif
 
-#endif // #ifdef __CUDA__
+// #endif // #ifdef __CUDA__

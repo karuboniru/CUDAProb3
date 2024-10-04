@@ -44,8 +44,11 @@ public:
   ///
   /// @param n_cosines Number cosine bins
   /// @param n_energies Number of energy bins
-  Propagator(int n_cosines, int n_energies)
-      : n_cosines(n_cosines), n_energies(n_energies) {
+  Propagator(int n_cosines, int n_energies, size_t rebin_factor_costh)
+      : n_cosines(n_cosines), n_energies(n_energies),
+        rebin_factor_costh(rebin_factor_costh) {
+    // std::cerr << "n_cosines " << n_cosines << " n_energies " << n_energies
+    //           << " rebin_factor_costh " << rebin_factor_costh << std::endl;
     energyList.resize(n_energies);
     cosineList.resize(n_cosines);
     maxlayers.resize(n_cosines);
@@ -54,14 +57,16 @@ public:
   /// \brief Copy constructor
   /// @param other
   Propagator(const Propagator &other)
-      : n_cosines(other.n_cosines), n_energies(other.n_energies) {
+      : n_cosines(other.n_cosines), n_energies(other.n_energies),
+        rebin_factor_costh(other.rebin_factor_costh) {
     *this = other;
   }
 
   /// \brief Move constructor
   /// @param other
   Propagator(Propagator &&other) noexcept
-      : n_cosines(other.n_cosines), n_energies(other.n_energies) {
+      : n_cosines(other.n_cosines), n_energies(other.n_energies),
+        rebin_factor_costh(other.rebin_factor_costh) {
     *this = std::move(other);
   }
 
@@ -90,6 +95,7 @@ public:
 
     n_cosines = other.n_cosines;
     n_energies = other.n_energies;
+    rebin_factor_costh = other.rebin_factor_costh;
 
     return *this;
   }
@@ -335,6 +341,7 @@ protected:
 
   int n_cosines;
   int n_energies;
+  size_t rebin_factor_costh;
 };
 
 } // namespace cudaprob3
