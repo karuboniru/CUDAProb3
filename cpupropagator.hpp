@@ -100,12 +100,12 @@ public:
     physics::setMassDifferences_host(this->dm.data());
     memset(resultList_costh_rebined.data(), 0,
            resultList_costh_rebined.size() * sizeof(FLOAT_T));
-    physics::calculate(type, this->cosineList.data(), this->cosineList.size(),
-                       this->energyList.data(), this->energyList.size(),
-                       this->radii.data(), this->rhos.data(),
-                       this->maxlayers.data(),
-                       this->ProductionHeightinCentimeter, resultList.data());
-    resultList_costh_rebined_init = false;
+    physics::calculate(
+        type, this->cosineList.data(), this->cosineList.size(),
+        this->energyList.data(), this->energyList.size(), this->radii.data(),
+        this->rhos.data(), this->maxlayers.data(),
+        this->ProductionHeightinCentimeter, resultList.data(),
+        this->rebin_factor_costh, resultList_costh_rebined.data());
   }
 
   FLOAT_T getProbability(int index_cosine, int index_energy,
@@ -118,37 +118,16 @@ public:
   }
 
   FLOAT_T getProbabilityRebin(int index_cosine, int index_energy, ProbType t) {
-    // const auto index_cosine_rebined = index_cosine;
-    const auto n_cosines_rebined = this->n_cosines / this->rebin_factor_costh;
-    if (!resultList_costh_rebined_init) [[unlikely]] {
-      memset(resultList_costh_rebined.data(), 0,
-             resultList_costh_rebined.size() * sizeof(FLOAT_T));
-      for (int i = 0; i < this->n_cosines; i++) {
-        auto i_rebined = i / this->rebin_factor_costh;
-        for (int j = 0; j < this->n_energies; j++) {
-          for (int k = 0; k < 9; k++) {
-            resultList_costh_rebined[std::uint64_t(i_rebined) *
-                                         std::uint64_t(this->n_energies) *
-                                         std::uint64_t(9) +
-                                     std::uint64_t(j) * std::uint64_t(9) + k] +=
-                resultList[std::uint64_t(i) * std::uint64_t(this->n_energies) *
-                               std::uint64_t(9) +
-                           std::uint64_t(j) * std::uint64_t(9) + k] / this->rebin_factor_costh;
-          }
-        }
-      }
-      resultList_costh_rebined_init = true;
-    }
-    return resultList_costh_rebined
-        [std::uint64_t(index_cosine) * std::uint64_t(this->n_energies) *
-             std::uint64_t(9) +
-         std::uint64_t(index_energy) * std::uint64_t(9) + int(t)];
+    std::uint64_t index = std::uint64_t(index_cosine) *
+                              std::uint64_t(this->n_energies) *
+                              std::uint64_t(9) +
+                          std::uint64_t(index_energy) * std::uint64_t(9);
+    return resultList_costh_rebined[index + int(t)];
   }
 
 private:
   std::vector<FLOAT_T> resultList;
   std::vector<FLOAT_T> resultList_costh_rebined;
-  bool resultList_costh_rebined_init{false};
 };
 
 } // namespace cudaprob3

@@ -667,7 +667,8 @@ calculate(NeutrinoType type, const FLOAT_T *const cosinelist, int n_cosines,
           const FLOAT_T *const energylist, int n_energies,
           const FLOAT_T *const radii, const FLOAT_T *const rhos,
           const int *const maxlayers, FLOAT_T ProductionHeightinCentimeter,
-          FLOAT_T *const result) {
+          FLOAT_T *const result, size_t rebin_factor,
+          FLOAT_T *const rebin_result) {
 
 // prepare more constant data. For the kernel, this is done by the wrapper
 // function callCalculateKernelAsync
@@ -784,7 +785,9 @@ calculate(NeutrinoType type, const FLOAT_T *const cosinelist, int n_cosines,
         for (int outflv = 0; outflv < 3; outflv++) {
           const FLOAT_T re = finalTransitionMatrix[outflv][inflv].re;
           const FLOAT_T im = finalTransitionMatrix[outflv][inflv].im;
+          const unsigned rebin_costh_index = index_cosine / rebin_factor;
 #ifdef __CUDA_ARCH__
+          const unsigned rebin_n_costh = n_cosines / rebin_factor;
           const unsigned long long resultIndex =
               (unsigned long long)(n_energies) *
                   (unsigned long long)(index_cosine) +
@@ -793,6 +796,22 @@ calculate(NeutrinoType type, const FLOAT_T *const cosinelist, int n_cosines,
                                    (unsigned long long)(n_cosines) *
                                    (unsigned long long)((inflv * 3 + outflv))] =
               re * re + im * im;
+
+          const unsigned long long resultIndex_rebin =
+              (unsigned long long)(n_energies) *
+                  (unsigned long long)(rebin_costh_index) +
+              (unsigned long long)(index_energy);
+          // rebin_result[resultIndex +
+          //              (unsigned long long)(n_energies) *
+          //                  (unsigned long long)(rebin_n_costh) *
+          //                  (unsigned long long)((inflv * 3 + outflv))] +=
+          //     (re * re + im * im) / rebin_factor;
+          atomicAdd(
+              &rebin_result[resultIndex_rebin +
+                            (unsigned long long)(n_energies) *
+                                (unsigned long long)(rebin_n_costh) *
+                                (unsigned long long)((inflv * 3 + outflv))],
+              (re * re + im * im) / rebin_factor);
 #else
           const unsigned long long resultIndex =
               (unsigned long long)(index_cosine) *
@@ -800,6 +819,14 @@ calculate(NeutrinoType type, const FLOAT_T *const cosinelist, int n_cosines,
               (unsigned long long)(index_energy) * (unsigned long long)(9);
           result[resultIndex + (unsigned long long)((inflv * 3 + outflv))] =
               re * re + im * im;
+
+          const unsigned long long resultIndex_rebin =
+              (unsigned long long)(rebin_costh_index) *
+                  (unsigned long long)(n_energies) * (unsigned long long)(9) +
+              (unsigned long long)(index_energy) * (unsigned long long)(9);
+          rebin_result[resultIndex +
+                       (unsigned long long)((inflv * 3 + outflv))] +=
+              (re * re + im * im) / rebin_factor;
 #endif
         }
       }
@@ -813,10 +840,12 @@ KERNEL __launch_bounds__(64, 8) void calculateKernel(
     NeutrinoType type, const FLOAT_T *const cosinelist, int n_cosines,
     const FLOAT_T *const energylist, int n_energies, const FLOAT_T *const radii,
     const FLOAT_T *const rhos, const int *const maxlayers,
-    FLOAT_T ProductionHeightinCentimeter, FLOAT_T *const result) {
+    FLOAT_T ProductionHeightinCentimeter, FLOAT_T *const result,
+    size_t rebin_factor, FLOAT_T *const rebin_result) {
 
   calculate(type, cosinelist, n_cosines, energylist, n_energies, radii, rhos,
-            maxlayers, ProductionHeightinCentimeter, result);
+            maxlayers, ProductionHeightinCentimeter, result, rebin_factor,
+            rebin_result);
 }
 
 template <typename FLOAT_T>
@@ -825,13 +854,15 @@ void callCalculateKernelAsync(
     const FLOAT_T *const cosinelist, int n_cosines,
     const FLOAT_T *const energylist, int n_energies, const FLOAT_T *const radii,
     const FLOAT_T *const rhos, const int *const maxlayers,
-    FLOAT_T ProductionHeightinCentimeter, FLOAT_T *const result) {
+    FLOAT_T ProductionHeightinCentimeter, FLOAT_T *const result,
+    size_t rebin_factor, FLOAT_T *const rebin_result) {
 
   prepare_getMfast<FLOAT_T>(type);
 
   calculateKernel<FLOAT_T><<<grid, block, 0, stream>>>(
       type, cosinelist, n_cosines, energylist, n_energies, radii, rhos,
-      maxlayers, ProductionHeightinCentimeter, result);
+      maxlayers, ProductionHeightinCentimeter, result, rebin_factor,
+      rebin_result);
   CUERR;
 }
 #endif
