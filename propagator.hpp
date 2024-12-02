@@ -182,7 +182,9 @@ public:
   /// @param theta23
   /// @param dCP
   virtual void setMNSMatrix(FLOAT_T theta12, FLOAT_T theta13, FLOAT_T theta23,
-                            FLOAT_T dCP) {
+                            FLOAT_T dCP, int kNutype) {
+
+    if( kNutype < 0 ) dCP = -dCP;
 
     const FLOAT_T s12 = sin(theta12);
     const FLOAT_T s13 = sin(theta13);
