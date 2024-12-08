@@ -237,7 +237,17 @@ protected:
 
     // set neutrino parameters for core physics functions for both host and
     // device
-    physics::setMixMatrix(this->Mix_U.data());
+    switch (type) {
+    case NeutrinoType::Neutrino:
+      physics::setMixMatrix_host(this->Mix_U.data());
+      break;
+    case NeutrinoType::Antineutrino:
+      auto Mix_U_conj = this->Mix_U;
+      for (auto &m : Mix_U_conj) {
+        m.im = -m.im;
+      }
+      physics::setMixMatrix_host(Mix_U_conj.data());
+    }
     physics::setMassDifferences(this->dm.data());
 
     dim3 block(64, 1, 1);

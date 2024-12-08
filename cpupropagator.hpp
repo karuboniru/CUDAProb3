@@ -18,7 +18,6 @@ along with CUDAProb3++.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef CUDAPROB3_CPUPROPAGATOR_HPP
 #define CUDAPROB3_CPUPROPAGATOR_HPP
 
-
 #include "constants.hpp"
 #include "propagator.hpp"
 
@@ -90,8 +89,17 @@ public:
       throw std::runtime_error("CpuPropagator::calculateProbabilities. "
                                "production height was not set");
 
-    // set neutrino parameters for core physics functions
-    physics::setMixMatrix_host(this->Mix_U.data());
+    switch (type) {
+    case NeutrinoType::Neutrino:
+      physics::setMixMatrix_host(this->Mix_U.data());
+      break;
+    case NeutrinoType::Antineutrino:
+      auto Mix_U_conj = this->Mix_U;
+      for (auto &m : Mix_U_conj) {
+        m.im = -m.im;
+      }
+      physics::setMixMatrix_host(Mix_U_conj.data());
+    }
     physics::setMassDifferences_host(this->dm.data());
 
     physics::calculate(type, this->cosineList.data(), this->cosineList.size(),
