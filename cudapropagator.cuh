@@ -200,14 +200,14 @@ namespace cudaprob3{
             // set neutrino parameters for core physics functions for both host and device
             switch (type) {
             case NeutrinoType::Neutrino:
-                physics::setMixMatrix_host(this->Mix_U.data());
+                physics::setMixMatrix(this->Mix_U.data());
                 break;
             case NeutrinoType::Antineutrino:
                 auto Mix_U_conj = this->Mix_U;
                 for (auto &m : Mix_U_conj) {
                     m.im = -m.im;
                 }
-                physics::setMixMatrix_host(Mix_U_conj.data());
+                physics::setMixMatrix(Mix_U_conj.data());
             }
             physics::setMassDifferences(this->dm.data());
 
