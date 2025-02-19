@@ -32,6 +32,11 @@ along with CUDAProb3++.  If not, see <http://www.gnu.org/licenses/>.
 #include <string>
 #include <vector>
 
+#include <cuda/cmath>
+#include <cuda/std/array>
+#include <cuda/std/mdspan>
+#include <cuda/std/span>
+
 namespace cudaprob3 {
 
 /// \class CudaPropagatorSingle
@@ -211,6 +216,13 @@ public:
                                  std::uint64_t(this->n_cosines);
 
     return resultList.get()[index + offset];
+  }
+  // span index [from] [to] [cosine] [energy]
+  auto GetDevResultMdSpan() {
+    return cuda::std::mdspan<
+        FLOAT_T, cuda::std::extents<size_t, 3, 3, cuda::std::dynamic_extent,
+                                    cuda::std::dynamic_extent>>(
+        d_result_list.get(), 3, 3, this->n_cosines, this->n_energies);
   }
 
 protected:
