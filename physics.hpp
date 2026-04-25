@@ -28,7 +28,6 @@ along with CUDAProb3++.  If not, see <http://www.gnu.org/licenses/>.
 // #include <math.h>
 // #include <algorithm>
 #include <assert.h>
-#include <omp.h>
 
 /*
  * This file contains the Barger et al physics which are used by Prob3++ to
@@ -43,7 +42,7 @@ along with CUDAProb3++.  If not, see <http://www.gnu.org/licenses/>.
  * const radii, const FLOAT_T* const rhos, const int* const maxlayers, FLOAT_T
  * ProductionHeightinCentimeter, FLOAT_T* const result)
  *
- * It can either be called directly on the CPU, or on the GPU via kernel
+ * It is called on the GPU via kernel
  *
  * template<typename FLOAT_T>
  * __global__
@@ -53,12 +52,8 @@ along with CUDAProb3++.  If not, see <http://www.gnu.org/licenses/>.
  * ProductionHeightinCentimeter, FLOAT_T* const result)
  *
  *
- * Both host and device code is combined in function void calculate(..), such
- * that only one function has to be maintained for host and device.
- *
- *
- * Before using function void calculate(..) (or the kernel), neutrino mixing
- * matrix and neutrino mass differences have to be set. Use
+ * Before using the kernel, neutrino mixing matrix and neutrino mass differences
+ * have to be set. Use
  *
  * template<typename FLOAT_T>
  * void setMixMatrix(math::ComplexNumber<FLOAT_T>* U);
@@ -69,21 +64,6 @@ along with CUDAProb3++.  If not, see <http://www.gnu.org/licenses/>.
  * void setMassDifferences(FLOAT_T* dm);
  *
  * before GPU calculation.
- *
- * Use
- *
- * template<typename FLOAT_T>
- * void setMixMatrix_host(math::ComplexNumber<FLOAT_T>* U);
- *
- * and
- *
- * template<typename FLOAT_T>
- * void setMassDifferences_host(FLOAT_T* dm);
- *
- * before CPU calculation.
- *
- *
- *
  *
  * NVCC macro __CUDA_ARCH__ is used for gpu exclusive code inside __host__
  * __device__ functions
@@ -168,32 +148,6 @@ template <typename FLOAT_T> void setMixMatrix(math::ComplexNumber<FLOAT_T> *U) {
 }
 
 /*
- * Set global 3x3 pmns mixing matrix on host only
- */
-template <typename FLOAT_T>
-void setMixMatrix_host(math::ComplexNumber<FLOAT_T> *U) {
-  memcpy((FLOAT_T *)mix_data, U, sizeof(math::ComplexNumber<FLOAT_T>) * 9);
-
-  // precomputed factors for faster calculation
-  for (int n = 0; n < 3; n++) {
-    for (int m = 0; m < 3; m++) {
-      for (int i = 0; i < 3; i++) {
-        for (int j = 0; j < 3; j++) {
-          AXFAC(n, m, i, j, 0) = U[n * 3 + i].re * U[m * 3 + j].re +
-                                 U[n * 3 + i].im * U[m * 3 + j].im;
-          AXFAC(n, m, i, j, 1) = U[n * 3 + i].re * U[m * 3 + j].im -
-                                 U[n * 3 + i].im * U[m * 3 + j].re;
-          AXFAC(n, m, i, j, 2) = U[n * 3 + i].im * U[m * 3 + j].im +
-                                 U[n * 3 + i].re * U[m * 3 + j].re;
-          AXFAC(n, m, i, j, 3) = U[n * 3 + i].im * U[m * 3 + j].re -
-                                 U[n * 3 + i].re * U[m * 3 + j].im;
-        }
-      }
-    }
-  }
-}
-
-/*
  * Set global 3x3 neutrino mass difference matrix
  */
 /// \brief set mass differences to constant memory
@@ -204,13 +158,6 @@ template <typename FLOAT_T> void setMassDifferences(FLOAT_T *dm) {
                      cudaMemcpyHostToDevice);
   CUERR;
 #endif
-}
-
-/*
- * Set global 3x3 neutrino mass difference matrix on host only
- */
-template <typename FLOAT_T> void setMassDifferences_host(FLOAT_T *dm) {
-  memcpy((FLOAT_T *)mass_data, dm, sizeof(FLOAT_T) * 9);
 }
 
 //
@@ -294,7 +241,7 @@ template <typename FLOAT_T> void prepare_getMfast(NeutrinoType type) {
  * is done in prepare_getMfast
  */
 template <typename FLOAT_T>
-HOSTDEVICEQUALIFIER void
+DEVICEQUALIFIER void
 getMfast(const FLOAT_T Enu, const FLOAT_T rho, const NeutrinoType type,
          FLOAT_T d_dmMatMat[][3], FLOAT_T d_dmMatVac[][3]) {
 
@@ -352,20 +299,14 @@ getMfast(const FLOAT_T Enu, const FLOAT_T rho, const NeutrinoType type,
 
   /* Sort according to which reproduce the vaccum eigenstates */
 
-#ifdef __CUDA_ARCH__
 #pragma unroll
-#endif
   for (int i = 0; i < 3; i++) {
     mMat[i] = mMatU[ORDER(i)];
   }
 
-#ifdef __CUDA_ARCH__
 #pragma unroll
-#endif
   for (int i = 0; i < 3; i++) {
-#ifdef __CUDA_ARCH__
 #pragma unroll
-#endif
     for (int j = 0; j < 3; j++) {
       d_dmMatMat[i][j] = mMat[i] - mMat[j];
       d_dmMatVac[i][j] = mMat[i] - DM(j, 0);
@@ -377,7 +318,7 @@ getMfast(const FLOAT_T Enu, const FLOAT_T rho, const NeutrinoType type,
     Calculate the product of Eq. (11)
 */
 template <typename FLOAT_T>
-HOSTDEVICEQUALIFIER void
+DEVICEQUALIFIER void
 get_product(const FLOAT_T L, const FLOAT_T E, const FLOAT_T rho,
             const FLOAT_T d_dmMatVac[][3], const FLOAT_T d_dmMatMat[][3],
             const NeutrinoType type,
@@ -393,13 +334,9 @@ get_product(const FLOAT_T L, const FLOAT_T E, const FLOAT_T rho,
   }();
 
 /* Calculate the matrix 2EH-M_j */
-#ifdef __CUDA_ARCH__
 #pragma unroll
-#endif
   for (int n = 0; n < 3; n++) {
-#ifdef __CUDA_ARCH__
 #pragma unroll
-#endif
     for (int m = 0; m < 3; m++) {
       twoEHmM[n][m][0].re =
           -fac * (U(0, n).re * U(0, m).re + U(0, n).im * U(0, m).im);
@@ -416,9 +353,7 @@ get_product(const FLOAT_T L, const FLOAT_T E, const FLOAT_T rho,
     }
   }
 
-#ifdef __CUDA_ARCH__
 #pragma unroll
-#endif
   for (int j = 0; j < 3; j++) {
     twoEHmM[0][0][j].re -= d_dmMatVac[j][0];
     twoEHmM[1][1][j].re -= d_dmMatVac[j][1];
@@ -427,17 +362,11 @@ get_product(const FLOAT_T L, const FLOAT_T E, const FLOAT_T rho,
 
 /* Calculate the product in eq.(11) of twoEHmM for j!=k */
 // memset(product, 0, 3*3*3*sizeof(math::ComplexNumber<FLOAT_T>));
-#ifdef __CUDA_ARCH__
 #pragma unroll
-#endif
   for (int i = 0; i < 3; i++) {
-#ifdef __CUDA_ARCH__
 #pragma unroll
-#endif
     for (int j = 0; j < 3; j++) {
-#ifdef __CUDA_ARCH__
 #pragma unroll
-#endif
       for (int k = 0; k < 3; k++) {
         product[i][j][k].re = 0;
         product[i][j][k].im = 0;
@@ -445,17 +374,11 @@ get_product(const FLOAT_T L, const FLOAT_T E, const FLOAT_T rho,
     }
   }
 
-#ifdef __CUDA_ARCH__
 #pragma unroll
-#endif
   for (int i = 0; i < 3; i++) {
-#ifdef __CUDA_ARCH__
 #pragma unroll
-#endif
     for (int j = 0; j < 3; j++) {
-#ifdef __CUDA_ARCH__
 #pragma unroll
-#endif
       for (int k = 0; k < 3; k++) {
         product[i][j][0].re += twoEHmM[i][k][1].re * twoEHmM[k][j][2].re -
                                twoEHmM[i][k][1].im * twoEHmM[k][j][2].im;
@@ -484,7 +407,7 @@ get_product(const FLOAT_T L, const FLOAT_T E, const FLOAT_T rho,
 }
 
 template <typename FLOAT_T>
-HOSTDEVICEQUALIFIER void
+DEVICEQUALIFIER void
 getA(const FLOAT_T L, const FLOAT_T E, const FLOAT_T rho,
      const FLOAT_T d_dmMatVac[][3], const FLOAT_T d_dmMatMat[][3],
      const NeutrinoType type, math::ComplexNumber<FLOAT_T> A[3][3],
@@ -501,22 +424,16 @@ getA(const FLOAT_T L, const FLOAT_T E, const FLOAT_T rho,
 
 /* Make the sum with the exponential factor in Eq. (11) */
 // memset(X, 0, 3*3*sizeof(math::ComplexNumber<FLOAT_T>));
-#ifdef __CUDA_ARCH__
 #pragma unroll
-#endif
   for (int i = 0; i < 3; i++) {
-#ifdef __CUDA_ARCH__
 #pragma unroll
-#endif
     for (int j = 0; j < 3; j++) {
       X[i][j].re = 0;
       X[i][j].im = 0;
     }
   }
 
-#ifdef __CUDA_ARCH__
 #pragma unroll
-#endif
   for (int k = 0; k < 3; k++) {
     const FLOAT_T arg = [&]() {
       if (k == 2)
@@ -525,20 +442,11 @@ getA(const FLOAT_T L, const FLOAT_T E, const FLOAT_T rho,
         return -LoEfac * d_dmMatVac[k][0] * L / E;
     }();
 
-#ifdef __CUDACC__
     FLOAT_T c, s;
     sincos(arg, &s, &c);
-#else
-    const FLOAT_T s = sin(arg);
-    const FLOAT_T c = cos(arg);
-#endif
-#ifdef __CUDA_ARCH__
 #pragma unroll
-#endif
     for (int i = 0; i < 3; i++) {
-#ifdef __CUDA_ARCH__
 #pragma unroll
-#endif
       for (int j = 0; j < 3; j++) {
         X[i][j].re += c * product[i][j][k].re - s * product[i][j][k].im;
         X[i][j].im += c * product[i][j][k].im + s * product[i][j][k].re;
@@ -549,34 +457,22 @@ getA(const FLOAT_T L, const FLOAT_T E, const FLOAT_T rho,
   /* Eq. (10)*/
   // memset(A, 0, 3*3*2*sizeof(FLOAT_T));
 
-#ifdef __CUDA_ARCH__
 #pragma unroll
-#endif
   for (int n = 0; n < 3; n++) {
-#ifdef __CUDA_ARCH__
 #pragma unroll
-#endif
     for (int m = 0; m < 3; m++) {
       A[n][m].re = 0;
       A[n][m].im = 0;
     }
   }
 
-#ifdef __CUDA_ARCH__
 #pragma unroll
-#endif
   for (int n = 0; n < 3; n++) {
-#ifdef __CUDA_ARCH__
 #pragma unroll
-#endif
     for (int m = 0; m < 3; m++) {
-#ifdef __CUDA_ARCH__
 #pragma unroll
-#endif
       for (int i = 0; i < 3; i++) {
-#ifdef __CUDA_ARCH__
 #pragma unroll
-#endif
         for (int j = 0; j < 3; j++) {
           // use precomputed factors
           A[n][m].re += AXFAC(n, m, i, j, 0) * X[i][j].re +
@@ -594,7 +490,7 @@ getA(const FLOAT_T L, const FLOAT_T E, const FLOAT_T rho,
  * kilometers through matter of constant density rho
  */
 template <typename FLOAT_T>
-HOSTDEVICEQUALIFIER void
+DEVICEQUALIFIER void
 get_transition_matrix(const NeutrinoType type, const FLOAT_T Enu,
                       const FLOAT_T rho, const FLOAT_T Len,
                       math::ComplexNumber<FLOAT_T> Aout[][3],
@@ -610,7 +506,7 @@ get_transition_matrix(const NeutrinoType type, const FLOAT_T Enu,
     Find density in layer
 */
 template <typename FLOAT_T>
-HOSTDEVICEQUALIFIER FLOAT_T getDensityOfLayer(const FLOAT_T *const rhos,
+DEVICEQUALIFIER FLOAT_T getDensityOfLayer(const FLOAT_T *const rhos,
                                               int layer, int max_layer) {
   if (layer == 0)
     return 0.0;
@@ -628,7 +524,7 @@ HOSTDEVICEQUALIFIER FLOAT_T getDensityOfLayer(const FLOAT_T *const rhos,
     Find distance in layer
 */
 template <typename FLOAT_T>
-HOSTDEVICEQUALIFIER FLOAT_T getTraversedDistanceOfLayer(
+DEVICEQUALIFIER FLOAT_T getTraversedDistanceOfLayer(
     const FLOAT_T *const radii, int layer, int max_layer, FLOAT_T PathLength,
     FLOAT_T TotalEarthLength, FLOAT_T cosine_zenith) {
 
@@ -662,32 +558,19 @@ HOSTDEVICEQUALIFIER FLOAT_T getTraversedDistanceOfLayer(
 }
 
 template <typename FLOAT_T>
-HOSTDEVICEQUALIFIER void
+DEVICEQUALIFIER void
 calculate(NeutrinoType type, const FLOAT_T *const cosinelist, int n_cosines,
           const FLOAT_T *const energylist, int n_energies,
           const FLOAT_T *const radii, const FLOAT_T *const rhos,
           const int *const maxlayers, FLOAT_T ProductionHeightinCentimeter,
           FLOAT_T *const result) {
 
-// prepare more constant data. For the kernel, this is done by the wrapper
-// function callCalculateKernelAsync
-#ifndef __CUDA_ARCH__
-  prepare_getMfast<FLOAT_T>(type);
-#endif
-
-#ifdef __CUDA_ARCH__
-  // on the device, we use the global thread Id to index the data
   const int max_energies_per_path = SDIV(n_energies, blockDim.x) * blockDim.x;
   for (unsigned index = blockIdx.x * blockDim.x + threadIdx.x;
        index < n_cosines * max_energies_per_path;
        index += blockDim.x * gridDim.x) {
     const unsigned index_energy = index % max_energies_per_path;
     const unsigned index_cosine = index / max_energies_per_path;
-#else
-// on the host, we use OpenMP to parallelize looping over cosines
-#pragma omp parallel for schedule(dynamic)
-  for (int index_cosine = 0; index_cosine < n_cosines; index_cosine += 1) {
-#endif
 
     const FLOAT_T cosine_zenith = cosinelist[index_cosine];
 
@@ -708,22 +591,14 @@ calculate(NeutrinoType type, const FLOAT_T *const cosinelist, int n_cosines,
     math::ComplexNumber<FLOAT_T> finalTransitionMatrix[3][3];
     math::ComplexNumber<FLOAT_T> TransitionTemp[3][3];
 
-#ifndef __CUDA_ARCH__
-    for (int index_energy = 0; index_energy < n_energies; index_energy += 1) {
-#else
     if (index_energy < n_energies) {
-#endif
 
       const FLOAT_T energy = energylist[index_energy];
 
 // set TransitionMatrixCoreToMantle to unit matrix
-#ifdef __CUDA_ARCH__
 #pragma unroll
-#endif
       for (int i = 0; i < 3; i++) {
-#ifdef __CUDA_ARCH__
 #pragma unroll
-#endif
         for (int j = 0; j < 3; j++) {
           TransitionMatrixCoreToMantle[i][j].re = (i == j ? 1.0 : 0.0);
           TransitionMatrixCoreToMantle[i][j].im = 0.0;
@@ -774,18 +649,13 @@ calculate(NeutrinoType type, const FLOAT_T *const cosinelist, int n_cosines,
 // for oscillation probabilities where the initial wave function
 // evaluates to 0+0i for two flavors and evaluates to 1+0i for the remaining
 // third flavor, we don't need to perform full matrix vector multiplication
-#ifdef __CUDA_ARCH__
 #pragma unroll
-#endif
       for (int inflv = 0; inflv < 3; inflv++) {
-#ifdef __CUDA_ARCH__
 #pragma unroll
-#endif
         for (int outflv = 0; outflv < 3; outflv++) {
           const FLOAT_T re = finalTransitionMatrix[outflv][inflv].re;
           const FLOAT_T im = finalTransitionMatrix[outflv][inflv].im;
 
-#ifdef __CUDA_ARCH__
           const unsigned long long resultIndex =
               (unsigned long long)(n_energies) *
                   (unsigned long long)(index_cosine) +
@@ -794,14 +664,6 @@ calculate(NeutrinoType type, const FLOAT_T *const cosinelist, int n_cosines,
                                    (unsigned long long)(n_cosines) *
                                    (unsigned long long)((inflv * 3 + outflv))] =
               re * re + im * im;
-#else
-          const unsigned long long resultIndex =
-              (unsigned long long)(index_cosine) *
-                  (unsigned long long)(n_energies) * (unsigned long long)(9) +
-              (unsigned long long)(index_energy) * (unsigned long long)(9);
-          result[resultIndex + (unsigned long long)((inflv * 3 + outflv))] =
-              re * re + im * im;
-#endif
         }
       }
     }
