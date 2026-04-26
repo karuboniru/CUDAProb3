@@ -1,208 +1,136 @@
-/*
-This file is part of CUDAProb3++.
+#include <cudaprob3/cudaprob3.hpp>
 
-CUDAProb3++ is free software: you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-CUDAProb3++ is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License
-along with CUDAProb3++.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
-#include <cudapropagator.cuh> // include cuda propagator
-#include <hpc_helpers.cuh> // timer
-
-
-#include <algorithm>
-#include <fstream>
+#include <cmath>
 #include <iomanip>
 #include <iostream>
 #include <memory>
 #include <vector>
 
-using namespace cudaprob3; // namespace of the propagators
+using namespace cudaprob3;
 
-template<class T>
-std::vector<T> linspace(T Emin,T Emax,unsigned int div){
-    if(div==0)
-        throw std::length_error("div == 0");
-
-    std::vector<T> linpoints(div, 0.0);
-
-    T step_lin = (Emax - Emin)/T(div-1);
-
-    T EE = Emin;
-
-    for(unsigned int i=0; i<div-1; i++, EE+=step_lin)
-        linpoints[i] = EE;
-
-    linpoints[div-1] = Emax;
-
-    return linpoints;
+static std::vector<double> linspace(double lo, double hi, int n) {
+    std::vector<double> v(n);
+    const double step = (hi - lo) / (n - 1);
+    for (int i = 0; i < n - 1; ++i) v[i] = lo + i * step;
+    v[n - 1] = hi;
+    return v;
+}
+static std::vector<double> logspace(double lo, double hi, int n) {
+    std::vector<double> v(n);
+    const double lolo = std::log(lo), lohi = std::log(hi);
+    const double step = (lohi - lolo) / (n - 1);
+    v[0] = lo; v[n - 1] = hi;
+    for (int i = 1; i < n - 1; ++i) v[i] = std::exp(lolo + i * step);
+    return v;
 }
 
-template<class T>
-std::vector<T> logspace(T Emin,T Emax,unsigned int div){
-    if(div==0)
-        throw std::length_error("div == 0");
-    std::vector<T> logpoints(div, 0.0);
+// ─── Example 1: single GPU, one PMNS set ─────────────────────────────────────
+static void example_single_gpu(const std::string& modelPath) {
+    std::cout << "=== Single GPU ===\n";
 
-    T Emin_log,Emax_log;
-    Emin_log = log(Emin);
-    Emax_log = log(Emax);
+    auto model = PREMModel::fromFile(modelPath);
+    if (!model) { std::cerr << model.error() << '\n'; return; }
 
-    T step_log = (Emax_log - Emin_log)/T(div-1);
+    auto cosVec = linspace(-1.0, 0.0, 200);
+    auto eVec   = logspace(1.0, 100.0, 200);
+    auto grid   = std::make_shared<ArbitraryGrid>(cosVec, eVec, /*prodHeightKm=*/22.0);
 
-    logpoints[0]=Emin;
-    T EE = Emin_log+step_log;
-    for(unsigned int i=1; i<div-1; i++, EE+=step_log)
-        logpoints[i] = exp(EE);
-    logpoints[div-1]=Emax;
-    return logpoints;
+    SingleGPUCalculator::Config cfg;
+    cfg.deviceId      = 0;
+    cfg.useCUDAGraphs = true;   // graph replay after first call
+    auto calc = SingleGPUCalculator::create(cfg, grid,
+                    std::make_shared<PREMModel>(std::move(*model)));
+    if (!calc) { std::cerr << calc.error() << '\n'; return; }
+
+    OscillationParams params(
+        /*theta12=*/ 0.5695951908800630,
+        /*theta13=*/ 0.1608752771983211,
+        /*theta23=*/ 0.7853981633974483,
+        /*dcp=*/     0.0,
+        /*dm12sq=*/  7.9e-5,
+        /*dm23sq=*/  2.5e-3);
+
+    auto result = calc->calculate(params, NeutrinoType::Neutrino);
+    if (!result) { std::cerr << result.error() << '\n'; return; }
+
+    // Sample a few values
+    std::cout << std::fixed << std::setprecision(6);
+    std::cout << "P(nu_mu -> nu_e)   icos=100 ie=100: "
+              << result->probability(100, 100, ProbType::m_e) << '\n';
+    std::cout << "P(nu_mu -> nu_mu)  icos=100 ie=100: "
+              << result->probability(100, 100, ProbType::m_m) << '\n';
+    std::cout << "P(nu_mu -> nu_tau) icos=100 ie=100: "
+              << result->probability(100, 100, ProbType::m_t) << '\n';
 }
 
+// ─── Example 2: batch mode — sweep over 8 PMNS sets in one launch ────────────
+static void example_batch(const std::string& modelPath) {
+    std::cout << "\n=== Batch (8 PMNS sets) ===\n";
 
-int main(int argc, char** argv){
+    auto model = PREMModel::fromFile(modelPath);
+    if (!model) { std::cerr << model.error() << '\n'; return; }
 
-    using FLOAT_T = double;
-    //using FLOAT_T = float;
+    auto cosVec = linspace(-1.0, 0.0, 100);
+    auto eVec   = logspace(1.0, 100.0, 100);
+    auto grid   = std::make_shared<ArbitraryGrid>(cosVec, eVec, 22.0);
 
-    TIMERSTARTCPU(total_runtime_with_output)
+    auto batch = BatchCalculator::create({0}, grid,
+                     std::make_shared<PREMModel>(std::move(*model)), /*chunkSize=*/8);
+    if (!batch) { std::cerr << batch.error() << '\n'; return; }
 
-	//// Binning
-    int n_cosines = 200;
-    int n_energies = 200;
-    //int threads = 4;
+    // Build 8 parameter sets varying theta23
+    constexpr int B = 8;
+    std::vector<OscillationParams> pVec;
+    for (int i = 0; i < B; ++i) {
+        const double th23 = 0.6 + i * 0.05;
+        pVec.emplace_back(0.5696, 0.1609, th23, 0.0, 7.9e-5, 2.5e-3);
+    }
+    std::vector<const OscillationParams*> ptrs;
+    for (auto& p : pVec) ptrs.push_back(&p);
 
-    if(argc > 1)
-	n_cosines = std::atoi(argv[1]);
-    if(argc > 2)
-        n_energies = std::atoi(argv[2]);
-    //if(argc > 3)
-	//   threads = std::atoi(argv[3]);
+    auto results = batch->calculate(std::span{ptrs}, NeutrinoType::Neutrino);
 
-    std::vector<FLOAT_T> cosineList = linspace((FLOAT_T)-1.0, (FLOAT_T)0.0, n_cosines);
-    std::vector<FLOAT_T> energyList = logspace((FLOAT_T)1.e0, (FLOAT_T)1.e2, n_energies);
+    std::cout << std::fixed << std::setprecision(6);
+    std::cout << "P(nu_mu -> nu_mu) at icos=50 ie=50 for each theta23:\n";
+    for (int b = 0; b < B; ++b) {
+        std::cout << "  theta23=" << std::setprecision(3) << (0.6 + b * 0.05)
+                  << "  P=" << std::setprecision(6)
+                  << results[b].probability(50, 50, ProbType::m_m) << '\n';
+    }
+}
 
-    // Prob3++ probRoot.cc parameters in radians
-	const FLOAT_T theta12 = 0.5695951908800630486710466089860865317151404697548723;
-	const FLOAT_T theta13 = 0.1608752771983210967007023071793306595103776477788280;
-	const FLOAT_T theta23 = 0.7853981633974483096156608458198757210492923498437764;
-	const FLOAT_T dcp     = 0.0;
+// ─── Example 3: multi-GPU ─────────────────────────────────────────────────────
+static void example_multi_gpu(const std::string& modelPath) {
+    std::cout << "\n=== Multi-GPU (GPUs {0}) ===\n";
 
-	const FLOAT_T dm12sq = 7.9e-5;
-	const FLOAT_T dm23sq = 2.5e-3;
+    auto model = PREMModel::fromFile(modelPath);
+    if (!model) { std::cerr << model.error() << '\n'; return; }
 
-    std::unique_ptr<Propagator<FLOAT_T>> propagator( new CudaPropagatorSingle<FLOAT_T>(0, n_cosines, n_energies)); // Single GPU propagator using GPU 0
-    //std::unique_ptr<Propagator<FLOAT_T>> propagator( new CudaPropagator<FLOAT_T>(std::vector<int>{0}, n_cosines, n_energies)); // Multi GPU propagator which only uses GPU 0. Behaves identical to propagator above.
-    //std::unique_ptr<Propagator<FLOAT_T>> propagator( new CudaPropagator<FLOAT_T>(std::vector<int>{0, 1}, n_cosines, n_energies)); // Multi GPU propagator which uses GPU 0 and GPU 1
+    auto cosVec = linspace(-1.0, 0.0, 200);
+    auto eVec   = logspace(1.0, 100.0, 200);
+    auto grid   = std::make_shared<ArbitraryGrid>(cosVec, eVec, 22.0);
 
+    auto calc = MultiGPUCalculator::create(
+        {0},   // add more device IDs for true multi-GPU, e.g. {0, 1}
+        grid, std::make_shared<PREMModel>(std::move(*model)));
+    if (!calc) { std::cerr << calc.error() << '\n'; return; }
 
-    // set energy list
-	propagator->setEnergyList(energyList);
+    OscillationParams params(0.5696, 0.1609, 0.7854, 0.0, 7.9e-5, 2.5e-3);
+    auto result = calc->calculate(params, NeutrinoType::Neutrino);
+    if (!result) { std::cerr << result.error() << '\n'; return; }
 
-    //set cosine list
-	propagator->setCosineList(cosineList);
+    std::cout << std::fixed << std::setprecision(6);
+    std::cout << "P(nu_e -> nu_e) icos=0 ie=0: "
+              << result->probability(0, 0, ProbType::e_e) << '\n';
+}
 
-    // set mixing matrix. angles in radians
-	propagator->setMNSMatrix(theta12, theta13, theta23, dcp);
+int main(int argc, char** argv) {
+    const std::string modelPath = (argc > 1)
+        ? std::string(argv[1]) + "/PREM_12layer.dat"
+        : "../models/PREM_12layer.dat";
 
-    // set neutrino mass differences. unit: eV^2
-	propagator->setNeutrinoMasses(dm12sq, dm23sq);
-
-    // set density model
-    propagator->setDensityFromFile("models/PREM_12layer.dat");
-
-    // set neutrino production height in kilometers above earth
-    propagator->setProductionHeight(22.0);
-
-    TIMERSTARTCPU(calc_and_transfer);
-    TIMERSTARTCPU(calculation);
-
-    // perform calculation. parameter is either cudaprob3::Neutrino or cudaprob3::Antineutrino
-	propagator->calculateProbabilities(cudaprob3::Neutrino);
-
-    TIMERSTOPCPU(calculation);
-	//first result access after calculation triggers data transfer
-    propagator->getProbability(0,0, ProbType::e_e);
-    TIMERSTOPCPU(calc_and_transfer);
-
-#if 1
-    // write output to files
-
-	std::ofstream outfile00("out_e_e.txt");
-	std::ofstream outfile01("out_e_m.txt");
-	std::ofstream outfile02("out_e_t.txt");
-	std::ofstream outfile10("out_m_e.txt");
-	std::ofstream outfile11("out_m_m.txt");
-	std::ofstream outfile12("out_m_t.txt");
-	std::ofstream outfile20("out_t_e.txt");
-	std::ofstream outfile21("out_t_m.txt");
-	std::ofstream outfile22("out_t_t.txt");
-
-    outfile00 << n_cosines << " " << n_energies <<'\n';
-    outfile01 << n_cosines << " " << n_energies <<'\n';
-    outfile02 << n_cosines << " " << n_energies <<'\n';
-    outfile10 << n_cosines << " " << n_energies <<'\n';
-    outfile11 << n_cosines << " " << n_energies <<'\n';
-    outfile12 << n_cosines << " " << n_energies <<'\n';
-    outfile20 << n_cosines << " " << n_energies <<'\n';
-    outfile21 << n_cosines << " " << n_energies <<'\n';
-    outfile22 << n_cosines << " " << n_energies <<'\n';
-
-    for(int i = 0; i < n_cosines; i++) {
-        for(int j = 0; j < n_energies; j++) {
-
-            // ProbType::x_y is probability of transition x -> y
-            outfile00 << std::setprecision(20) << propagator->getProbability(i, j, ProbType::e_e) << " ";
-            outfile01 << std::setprecision(20) << propagator->getProbability(i, j, ProbType::e_m) << " ";
-            outfile02 << std::setprecision(20) << propagator->getProbability(i, j, ProbType::e_t) << " ";
-            outfile10 << std::setprecision(20) << propagator->getProbability(i, j, ProbType::m_e) << " ";
-            outfile11 << std::setprecision(20) << propagator->getProbability(i, j, ProbType::m_m) << " ";
-            outfile12 << std::setprecision(20) << propagator->getProbability(i, j, ProbType::m_t) << " ";
-            outfile20 << std::setprecision(20) << propagator->getProbability(i, j, ProbType::t_e) << " ";
-            outfile21 << std::setprecision(20) << propagator->getProbability(i, j, ProbType::t_m) << " ";
-            outfile22 << std::setprecision(20) << propagator->getProbability(i, j, ProbType::t_t) << " ";
-		}
-
-		outfile00 << '\n';
-		outfile01 << '\n';
-		outfile02 << '\n';
-		outfile10 << '\n';
-		outfile11 << '\n';
-		outfile12 << '\n';
-		outfile20 << '\n';
-		outfile21 << '\n';
-		outfile22 << '\n';
-	}
-    outfile00 << '\n';
-    outfile01 << '\n';
-    outfile02 << '\n';
-    outfile10 << '\n';
-    outfile11 << '\n';
-    outfile12 << '\n';
-    outfile20 << '\n';
-    outfile21 << '\n';
-    outfile22 << '\n';
-
-	outfile00.flush();
-	outfile01.flush();
-	outfile02.flush();
-	outfile10.flush();
-	outfile11.flush();
-	outfile12.flush();
-	outfile20.flush();
-	outfile21.flush();
-	outfile22.flush();
-
-#endif
-
-    TIMERSTOPCPU(total_runtime_with_output)
-
+    example_single_gpu(modelPath);
+    example_batch(modelPath);
+    example_multi_gpu(modelPath);
+    return 0;
 }

@@ -1,2 +1,9 @@
+build/
+*.o
+*.a
+*.so
+*.ptx
+*.cubin
 example/out_*.txt
-example/example_gpu
+example/new_*.txt
+example/cudaprob3_example
