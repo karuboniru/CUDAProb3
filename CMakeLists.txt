@@ -83,4 +83,7 @@ endif()
 if(CUDA_PROB3_BUILD_EXAMPLES)
     add_executable(example_benchmark examples/benchmark.cu)
     target_link_libraries(example_benchmark PRIVATE cudaprob3)
+
+    add_executable(compare_new tests/comparison/compare_new.cu)
+    target_link_libraries(compare_new PRIVATE cudaprob3)
 endif()
