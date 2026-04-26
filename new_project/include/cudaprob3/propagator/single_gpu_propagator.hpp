@@ -126,10 +126,12 @@ void calculateProbabilitiesKernel(
         copy_complex_matrix(temp, acc);
 
         // Probabilities = |A_{ij}|^2
+        // The transition amplitude A(outflv, inflv) gives P(inflv → outflv)
+        // Store at result index: inflv*3 + outflv (matches original Barger convention)
         for (int inflv = 0; inflv < 3; ++inflv) {
             for (int outflv = 0; outflv < 3; ++outflv) {
-                FLOAT_T re = acc(inflv, outflv).re;
-                FLOAT_T im = acc(inflv, outflv).im;
+                FLOAT_T re = acc(outflv, inflv).re;
+                FLOAT_T im = acc(outflv, inflv).im;
                 unsigned long long resultIdx =
                     static_cast<unsigned long long>(nEnergies) * idxCosine + idxEnergy;
                 result[resultIdx +
