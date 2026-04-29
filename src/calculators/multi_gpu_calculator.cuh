@@ -33,7 +33,7 @@ public:
         const int nCos   = grid->nCosines();
         const int nE     = grid->nEnergies();
 
-        std::vector<SingleGPUCalculator> calcs;
+        std::vector<SingleGPUCalculator<double>> calcs;
         calcs.reserve(nGPU);
 
         for (int g = 0; g < nGPU; ++g) {
@@ -46,11 +46,11 @@ public:
                 std::vector<double>(grid->energies().begin(), grid->energies().end()),
                 grid->productionHeightKm());
 
-            SingleGPUCalculator::Config cfg;
+            SingleGPUCalculator<double>::Config cfg;
             cfg.deviceId      = deviceIds[g];
             cfg.useCUDAGraphs = useCUDAGraphs;
 
-            auto calcOrErr = SingleGPUCalculator::create(cfg, subGrid, model);
+            auto calcOrErr = SingleGPUCalculator<double>::create(cfg, subGrid, model);
             if (!calcOrErr) return std::unexpected(calcOrErr.error());
 
             calcs.push_back(std::move(*calcOrErr));
@@ -67,7 +67,7 @@ public:
         return m;
     }
 
-    [[nodiscard]] std::expected<ResultView, std::string>
+    [[nodiscard]] std::expected<ResultView<double>, std::string>
     calculate(const OscillationParams& params, NeutrinoType type);
 #endif // !__CUDACC__
 
@@ -79,7 +79,7 @@ private:
 
     void mergeResults();
 
-    std::vector<SingleGPUCalculator> calcs_;
+    std::vector<SingleGPUCalculator<double>> calcs_;
     std::vector<int> deviceIds_;
     int nCos_ = 0;
     int nE_   = 0;

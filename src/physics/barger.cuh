@@ -44,7 +44,7 @@ BARGER_HD inline void sincos_impl(T x, T* s, T* c) noexcept {
 //       d_dmMatVac[i][j] = mMat[i] - DM(j,0)
 template <typename T>
 BARGER_HD void getMfast(T Enu, T rho, NeutrinoType type,
-                        const OscParamsPOD& p,
+                        const OscParamsPOD<T>& p,
                         T d_dmMatMat[3][3], T d_dmMatVac[3][3]) noexcept {
     T mMatU[3], mMat[3];
 
@@ -96,7 +96,7 @@ BARGER_HD void getMfast(T Enu, T rho, NeutrinoType type,
 template <typename T>
 BARGER_HD void get_product(T L, T E, T rho,
                             const T d_dmMatVac[3][3], const T d_dmMatMat[3][3],
-                            NeutrinoType type, const OscParamsPOD& p,
+                            NeutrinoType type, const OscParamsPOD<T>& p,
                             T prod_re[3][3][3], T prod_im[3][3][3]) noexcept {
     const T fac = (type == NeutrinoType::Antineutrino)
         ?  constants::tworttwoGf<T>() * E * rho
@@ -180,7 +180,7 @@ BARGER_HD void get_product(T L, T E, T rho,
 template <typename T>
 BARGER_HD void getA(T L, T E, T rho,
                     const T d_dmMatVac[3][3], const T d_dmMatMat[3][3],
-                    NeutrinoType type, const OscParamsPOD& p,
+                    NeutrinoType type, const OscParamsPOD<T>& p,
                     math::Complex3x3<T>& A) noexcept {
     T prod_re[3][3][3], prod_im[3][3][3];
     get_product(L, E, rho, d_dmMatVac, d_dmMatMat, type, p, prod_re, prod_im);
@@ -226,7 +226,7 @@ BARGER_HD void getA(T L, T E, T rho,
 // Full transition amplitude for a single constant-density segment.
 template <typename T>
 BARGER_HD void get_transition_matrix(NeutrinoType type, T Enu, T rho, T Len,
-                                      const OscParamsPOD& p,
+                                      const OscParamsPOD<T>& p,
                                       math::Complex3x3<T>& Aout) noexcept {
     T d_dmMatVac[3][3], d_dmMatMat[3][3];
     getMfast(Enu, rho, type, p, d_dmMatMat, d_dmMatVac);

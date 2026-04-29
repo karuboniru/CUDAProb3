@@ -14,7 +14,8 @@
 
 namespace cudaprob3 {
 
-std::optional<std::string> SingleGPUCalculator::init(
+template<typename T>
+std::optional<std::string> SingleGPUCalculator<T>::init(
     const Config& cfg,
     std::span<const double> cosines,
     std::span<const double> energies,
@@ -54,14 +55,16 @@ std::optional<std::string> SingleGPUCalculator::init(
     return std::nullopt;
 }
 
-SingleGPUCalculator::~SingleGPUCalculator() {
+template<typename T>
+SingleGPUCalculator<T>::~SingleGPUCalculator() {
     if (computeStream_) { cudaSetDevice(deviceId_); cudaStreamDestroy(computeStream_); }
     if (xferStream_)    { cudaSetDevice(deviceId_); cudaStreamDestroy(xferStream_); }
     if (computeDone_)   cudaEventDestroy(computeDone_);
     if (xferDone_)      cudaEventDestroy(xferDone_);
 }
 
-SingleGPUCalculator::SingleGPUCalculator(SingleGPUCalculator&& o) noexcept
+template<typename T>
+SingleGPUCalculator<T>::SingleGPUCalculator(SingleGPUCalculator<T>&& o) noexcept
     : deviceId_(o.deviceId_), nCos_(o.nCos_), nE_(o.nE_),
       prodHeightCm_(o.prodHeightCm_), useCUDAGraphs_(o.useCUDAGraphs_),
       computeStream_(o.computeStream_), xferStream_(o.xferStream_),
@@ -82,22 +85,24 @@ SingleGPUCalculator::SingleGPUCalculator(SingleGPUCalculator&& o) noexcept
     o.graphCaptured_ = false;
 }
 
-SingleGPUCalculator& SingleGPUCalculator::operator=(SingleGPUCalculator&& o) noexcept {
+template<typename T>
+SingleGPUCalculator<T>& SingleGPUCalculator<T>::operator=(SingleGPUCalculator<T>&& o) noexcept {
     if (this == &o) return *this;
     this->~SingleGPUCalculator();
     new (this) SingleGPUCalculator(std::move(o));
     return *this;
 }
 
-void SingleGPUCalculator::launchKernel(const OscParamsPOD& pod, NeutrinoType type,
-                                        int batchSize, cudaStream_t stream) {
+template<typename T>
+void SingleGPUCalculator<T>::launchKernel(const OscParamsPOD<T>& pod, NeutrinoType type,
+                                           int batchSize, cudaStream_t stream) {
     cudaSetDevice(deviceId_);
 
     cudaMemcpyAsync(thrust::raw_pointer_cast(d_params_.data()),
-                    &pod, sizeof(OscParamsPOD),
+                    &pod, sizeof(OscParamsPOD<T>),
                     cudaMemcpyHostToDevice, stream);
 
-    kernels::launchOscillationKernel(
+    kernels::launchOscillationKernel<T>(
         type,
         thrust::raw_pointer_cast(d_cosines_.data()),   nCos_,
         thrust::raw_pointer_cast(d_energies_.data()),  nE_,
@@ -111,29 +116,36 @@ void SingleGPUCalculator::launchKernel(const OscParamsPOD& pod, NeutrinoType typ
         stream);
 }
 
-void SingleGPUCalculator::issueD2H(cudaStream_t stream) {
-    const std::size_t bytes = h_results_.size() * sizeof(double);
+template<typename T>
+void SingleGPUCalculator<T>::issueD2H(cudaStream_t stream) {
+    const std::size_t bytes = h_results_.size() * sizeof(T);
     cudaMemcpyAsync(h_results_.data(),
                     thrust::raw_pointer_cast(d_results_.data()),
                     bytes, cudaMemcpyDeviceToHost, stream);
 }
 
-ResultView SingleGPUCalculator::makeResultView() const noexcept {
-    return ResultView{
-        std::span<const double>{h_results_.data(), h_results_.size()},
+template<typename T>
+ResultView<T> SingleGPUCalculator<T>::makeResultView() const noexcept {
+    return ResultView<T>{
+        std::span<const T>{h_results_.data(), h_results_.size()},
         nCos_, nE_
     };
 }
 
-void SingleGPUCalculator::calculateAsync(const OscillationParams& params, NeutrinoType type) {
+template<typename T>
+void SingleGPUCalculator<T>::calculateAsync(const OscillationParams& params, NeutrinoType type) {
     cudaSetDevice(deviceId_);
     const bool antineutrino = (type == NeutrinoType::Antineutrino);
-    const OscParamsPOD pod = params.computePOD(antineutrino);
+    const OscParamsPOD<T> pod = params.computePOD<T>(antineutrino);
     launchKernel(pod, type, 1, computeStream_);
     cudaEventRecord(computeDone_, computeStream_);
     cudaStreamWaitEvent(xferStream_, computeDone_, 0);
     issueD2H(xferStream_);
     cudaEventRecord(xferDone_, xferStream_);
 }
+
+// Explicit instantiations for the CUDA-compiled member functions.
+template class SingleGPUCalculator<float>;
+template class SingleGPUCalculator<double>;
 
 } // namespace cudaprob3

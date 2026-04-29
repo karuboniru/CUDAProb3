@@ -7,15 +7,16 @@
 
 namespace cudaprob3 {
 
-std::expected<ResultView, std::string>
-SingleGPUCalculator::calculate(const OscillationParams& params, NeutrinoType type) {
+template<typename T>
+std::expected<ResultView<T>, std::string>
+SingleGPUCalculator<T>::calculate(const OscillationParams& params, NeutrinoType type) {
     cudaSetDevice(deviceId_);
     const bool antineutrino = (type == NeutrinoType::Antineutrino);
-    const OscParamsPOD pod = params.computePOD(antineutrino);
+    const OscParamsPOD<T> pod = params.computePOD<T>(antineutrino);
 
     if (useCUDAGraphs_ && graphCaptured_) {
         cudaMemcpy(thrust::raw_pointer_cast(d_params_.data()),
-                   &pod, sizeof(OscParamsPOD), cudaMemcpyHostToDevice);
+                   &pod, sizeof(OscParamsPOD<T>), cudaMemcpyHostToDevice);
         graph_.replay(computeStream_);
     } else if (useCUDAGraphs_ && !graphCaptured_) {
         cudaStreamBeginCapture(computeStream_, cudaStreamCaptureModeGlobal);
@@ -44,11 +45,16 @@ SingleGPUCalculator::calculate(const OscillationParams& params, NeutrinoType typ
     return makeResultView();
 }
 
-std::expected<ResultView, std::string> SingleGPUCalculator::waitForResults() {
+template<typename T>
+std::expected<ResultView<T>, std::string> SingleGPUCalculator<T>::waitForResults() {
     cudaSetDevice(deviceId_);
     if (cudaEventSynchronize(xferDone_) != cudaSuccess)
         return std::unexpected("waitForResults: cudaEventSynchronize failed");
     return makeResultView();
 }
+
+// Explicit instantiations for the GCC-compiled member functions.
+template class SingleGPUCalculator<float>;
+template class SingleGPUCalculator<double>;
 
 } // namespace cudaprob3

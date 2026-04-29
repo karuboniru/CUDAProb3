@@ -12,20 +12,21 @@ enum class ProbType : int {
 
 enum class NeutrinoType { Neutrino, Antineutrino };
 
-// Non-owning view over a flat result buffer.
+// Non-owning view over a flat result buffer, templated on floating-point type T.
 // Buffer layout: [flavor_pair * n_cosines * n_energies + icos * n_energies + ie]
+template<typename T = double>
 struct ResultView {
-    std::span<const double> data{};
+    std::span<const T> data{};
     int n_cosines = 0;
     int n_energies = 0;
 
-    [[nodiscard]] double probability(int icos, int ie, ProbType t) const noexcept {
+    [[nodiscard]] T probability(int icos, int ie, ProbType t) const noexcept {
         return data[static_cast<int>(t) * n_cosines * n_energies
                     + icos * n_energies + ie];
     }
 
     // All (cosine, energy) values for one flavor-pair channel.
-    [[nodiscard]] std::span<const double> channel(ProbType t) const noexcept {
+    [[nodiscard]] std::span<const T> channel(ProbType t) const noexcept {
         const std::size_t off = static_cast<std::size_t>(static_cast<int>(t))
                               * static_cast<std::size_t>(n_cosines)
                               * static_cast<std::size_t>(n_energies);

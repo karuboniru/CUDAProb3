@@ -20,8 +20,8 @@ struct BatchResult {
     int n_cosines  = 0;
     int n_energies = 0;
 
-    ResultView operator[](std::size_t i) const noexcept {
-        return ResultView{
+    ResultView<double> operator[](std::size_t i) const noexcept {
+        return ResultView<double>{
             std::span<const double>{h_data[i].data(), h_data[i].size()},
             n_cosines, n_energies
         };

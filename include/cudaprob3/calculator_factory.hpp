@@ -16,10 +16,10 @@
 
 namespace cudaprob3 {
 
-// Variant calculator type — either single or multi GPU.
-using AnyCalculator = std::variant<SingleGPUCalculator, MultiGPUCalculator>;
+// Default calculator variant uses double precision.
+using AnyCalculator = std::variant<SingleGPUCalculator<double>, MultiGPUCalculator>;
 
-// Fluent builder that validates configuration and constructs calculators.
+// Fluent builder that validates configuration and constructs calculators (double precision).
 class CalculatorBuilder {
 public:
     CalculatorBuilder& withDevices(std::vector<int> ids) {
@@ -50,8 +50,8 @@ public:
         if (deviceIds_.empty()) return std::unexpected("no device IDs specified");
 
         if (deviceIds_.size() == 1) {
-            SingleGPUCalculator::Config cfg{ deviceIds_[0], useCUDAGraphs_ };
-            auto c = SingleGPUCalculator::create(cfg, grid_, model_);
+            SingleGPUCalculator<double>::Config cfg{ deviceIds_[0], useCUDAGraphs_ };
+            auto c = SingleGPUCalculator<double>::create(cfg, grid_, model_);
             if (!c) return std::unexpected(c.error());
             return AnyCalculator{std::move(*c)};
         } else {
@@ -77,8 +77,8 @@ private:
     int  chunkSize_     = 64;
 };
 
-// Helper: call calculate() on an AnyCalculator variant uniformly.
-inline std::expected<ResultView, std::string>
+// Helper: call calculate() on an AnyCalculator variant uniformly (double precision).
+inline std::expected<ResultView<double>, std::string>
 calculate(AnyCalculator& calc, const OscillationParams& params, NeutrinoType type) {
     return std::visit([&](auto& c) { return c.calculate(params, type); }, calc);
 }

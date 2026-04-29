@@ -7,7 +7,9 @@
 namespace cudaprob3 {
 
 // Value-semantic oscillation parameter set.
-// computePOD() builds the full OscParamsPOD needed by the GPU kernel.
+// computePOD<T>() builds the full OscParamsPOD<T> needed by the GPU kernel.
+// Intermediate math is always in double for accuracy; values are narrowed to T
+// when stored into the POD struct.
 class OscillationParams {
 public:
     OscillationParams(double theta12, double theta13, double theta23,
@@ -22,14 +24,15 @@ public:
     [[nodiscard]] double dm12sq()  const noexcept { return dm12sq_; }
     [[nodiscard]] double dm23sq()  const noexcept { return dm23sq_; }
 
-    // Build the full kernel-ready parameter block.
+    // Build the full kernel-ready parameter block in precision T.
     // For antineutrinos, the PMNS matrix is complex-conjugated (U -> U*),
-    // which is equivalent to flipping the sign of deltaCP.
-    [[nodiscard]] OscParamsPOD computePOD(bool antineutrino = false) const {
-        OscParamsPOD p{};
+    // equivalent to flipping the sign of deltaCP.
+    template<typename T = double>
+    [[nodiscard]] OscParamsPOD<T> computePOD(bool antineutrino = false) const {
+        OscParamsPOD<T> p{};
         fillMixMatrix(p);
         if (antineutrino) {
-            for (int i = 0; i < 9; ++i) p.mix_im[i] = -p.mix_im[i];
+            for (int i = 0; i < 9; ++i) p.mix_im[i] = static_cast<T>(-double(p.mix_im[i]));
         }
         fillMassDifferences(p);
         fillAxfac(p);
@@ -38,24 +41,26 @@ public:
     }
 
 private:
-    void fillMixMatrix(OscParamsPOD& p) const {
+    template<typename T>
+    void fillMixMatrix(OscParamsPOD<T>& p) const {
         const double s12 = std::sin(theta12_), c12 = std::cos(theta12_);
         const double s13 = std::sin(theta13_), c13 = std::cos(theta13_);
         const double s23 = std::sin(theta23_), c23 = std::cos(theta23_);
         const double sd  = std::sin(deltaCP_), cd  = std::cos(deltaCP_);
 
-        p.mix_re[0*3+0] = c12*c13;                    p.mix_im[0*3+0] = 0;
-        p.mix_re[0*3+1] = s12*c13;                    p.mix_im[0*3+1] = 0;
-        p.mix_re[0*3+2] = s13*cd;                     p.mix_im[0*3+2] = -s13*sd;
-        p.mix_re[1*3+0] = -s12*c23 - c12*s23*s13*cd; p.mix_im[1*3+0] = -c12*s23*s13*sd;
-        p.mix_re[1*3+1] =  c12*c23 - s12*s23*s13*cd; p.mix_im[1*3+1] = -s12*s23*s13*sd;
-        p.mix_re[1*3+2] =  s23*c13;                   p.mix_im[1*3+2] = 0;
-        p.mix_re[2*3+0] =  s12*s23 - c12*c23*s13*cd; p.mix_im[2*3+0] = -c12*c23*s13*sd;
-        p.mix_re[2*3+1] = -c12*s23 - s12*c23*s13*cd; p.mix_im[2*3+1] = -s12*c23*s13*sd;
-        p.mix_re[2*3+2] =  c23*c13;                   p.mix_im[2*3+2] = 0;
+        p.mix_re[0*3+0] = T( c12*c13);                    p.mix_im[0*3+0] = T(0);
+        p.mix_re[0*3+1] = T( s12*c13);                    p.mix_im[0*3+1] = T(0);
+        p.mix_re[0*3+2] = T( s13*cd);                     p.mix_im[0*3+2] = T(-s13*sd);
+        p.mix_re[1*3+0] = T(-s12*c23 - c12*s23*s13*cd);  p.mix_im[1*3+0] = T(-c12*s23*s13*sd);
+        p.mix_re[1*3+1] = T( c12*c23 - s12*s23*s13*cd);  p.mix_im[1*3+1] = T(-s12*s23*s13*sd);
+        p.mix_re[1*3+2] = T( s23*c13);                    p.mix_im[1*3+2] = T(0);
+        p.mix_re[2*3+0] = T( s12*s23 - c12*c23*s13*cd);  p.mix_im[2*3+0] = T(-c12*c23*s13*sd);
+        p.mix_re[2*3+1] = T(-c12*s23 - s12*c23*s13*cd);  p.mix_im[2*3+1] = T(-s12*c23*s13*sd);
+        p.mix_re[2*3+2] = T( c23*c13);                    p.mix_im[2*3+2] = T(0);
     }
 
-    void fillMassDifferences(OscParamsPOD& p) const {
+    template<typename T>
+    void fillMassDifferences(OscParamsPOD<T>& p) const {
         double mVac0 = 0.0;
         double mVac1 = dm12sq_;
         double mVac2 = dm12sq_ + dm23sq_;
@@ -63,29 +68,33 @@ private:
         if (dm12sq_ == 0.0) mVac0 -= kDelta;
         if (dm23sq_ == 0.0) mVac2 += kDelta;
 
-        for (int i = 0; i < 3; ++i) p.dm[i*3+i] = 0.0;
-        p.dm[0*3+1] = mVac0 - mVac1;  p.dm[1*3+0] = -p.dm[0*3+1];
-        p.dm[0*3+2] = mVac0 - mVac2;  p.dm[2*3+0] = -p.dm[0*3+2];
-        p.dm[1*3+2] = mVac1 - mVac2;  p.dm[2*3+1] = -p.dm[1*3+2];
+        for (int i = 0; i < 3; ++i) p.dm[i*3+i] = T(0);
+        p.dm[0*3+1] = T(mVac0 - mVac1);  p.dm[1*3+0] = T(-(mVac0 - mVac1));
+        p.dm[0*3+2] = T(mVac0 - mVac2);  p.dm[2*3+0] = T(-(mVac0 - mVac2));
+        p.dm[1*3+2] = T(mVac1 - mVac2);  p.dm[2*3+1] = T(-(mVac1 - mVac2));
     }
 
-    static void fillAxfac(OscParamsPOD& p) {
+    template<typename T>
+    static void fillAxfac(OscParamsPOD<T>& p) {
         for (int n = 0; n < 3; ++n)
             for (int m = 0; m < 3; ++m)
                 for (int i = 0; i < 3; ++i)
                     for (int j = 0; j < 3; ++j) {
-                        const double Ur = p.mix_re[n*3+i], Ui = p.mix_im[n*3+i];
-                        const double Vr = p.mix_re[m*3+j], Vi = p.mix_im[m*3+j];
-                        p.axfac[n*108+m*36+i*12+j*4+0] = Ur*Vr + Ui*Vi;
-                        p.axfac[n*108+m*36+i*12+j*4+1] = Ur*Vi - Ui*Vr;
-                        p.axfac[n*108+m*36+i*12+j*4+2] = Ui*Vi + Ur*Vr;
-                        p.axfac[n*108+m*36+i*12+j*4+3] = Ui*Vr - Ur*Vi;
+                        const double Ur = double(p.mix_re[n*3+i]);
+                        const double Ui = double(p.mix_im[n*3+i]);
+                        const double Vr = double(p.mix_re[m*3+j]);
+                        const double Vi = double(p.mix_im[m*3+j]);
+                        p.axfac[n*108+m*36+i*12+j*4+0] = T(Ur*Vr + Ui*Vi);
+                        p.axfac[n*108+m*36+i*12+j*4+1] = T(Ur*Vi - Ui*Vr);
+                        p.axfac[n*108+m*36+i*12+j*4+2] = T(Ui*Vi + Ur*Vr);
+                        p.axfac[n*108+m*36+i*12+j*4+3] = T(Ui*Vr - Ur*Vi);
                     }
     }
 
-    // Vacuum-only mass ordering — type-independent (no matter potential here).
-    static void fillMassOrder(OscParamsPOD& p) {
-        const double dm01 = p.dm[0*3+1], dm02 = p.dm[0*3+2];
+    template<typename T>
+    static void fillMassOrder(OscParamsPOD<T>& p) {
+        const double dm01 = double(p.dm[0*3+1]);
+        const double dm02 = double(p.dm[0*3+2]);
         const double alphaV = dm01 + dm02;
         const double betaV  = dm01 * dm02;
         const double tmpV_raw = alphaV*alphaV - 3.0*betaV;
@@ -98,7 +107,7 @@ private:
         constexpr double kPi = 3.14159265358979323846;
         const double th0 = std::acos(arg) / 3.0;
         const double base  = -(2.0/3.0)*std::sqrt(tmpV);
-        const double shift = p.dm[0*3+0] - alphaV/3.0;
+        const double shift = double(p.dm[0*3+0]) - alphaV/3.0;
         const double mMatV[3] = {
             base*std::cos(th0) + shift,
             base*std::cos(th0 - 2.0*kPi/3.0) + shift,
@@ -106,10 +115,10 @@ private:
         };
 
         for (int i = 0; i < 3; ++i) {
-            double best = std::fabs(p.dm[i*3+0] - mMatV[0]);
+            double best = std::fabs(double(p.dm[i*3+0]) - mMatV[0]);
             int k = 0;
             for (int j = 1; j < 3; ++j) {
-                const double d = std::fabs(p.dm[i*3+0] - mMatV[j]);
+                const double d = std::fabs(double(p.dm[i*3+0]) - mMatV[j]);
                 if (d < best) { best = d; k = j; }
             }
             p.order[i] = k;

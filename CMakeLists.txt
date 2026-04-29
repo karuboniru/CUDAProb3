@@ -30,6 +30,10 @@ add_library(cudaprob3 STATIC
     src/calculators/batch_calculator.cu            # Batch launch with Thrust (nvcc)
 )
 
+if(DEFINED OSCILLATION_FP)
+    target_compile_definitions(cudaprob3 PUBLIC CUDAPROB3_FP=${OSCILLATION_FP})
+endif()
+
 target_include_directories(cudaprob3
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

@@ -5,7 +5,7 @@
 
 namespace cudaprob3 {
 
-std::expected<ResultView, std::string>
+std::expected<ResultView<double>, std::string>
 MultiGPUCalculator::calculate(const OscillationParams& params, NeutrinoType type) {
     // Fire all GPUs asynchronously
     for (auto& c : calcs_)
@@ -18,7 +18,7 @@ MultiGPUCalculator::calculate(const OscillationParams& params, NeutrinoType type
     }
 
     mergeResults();
-    return ResultView{
+    return ResultView<double>{
         std::span<const double>{h_results_.data(), h_results_.size()},
         nCos_, nE_
     };

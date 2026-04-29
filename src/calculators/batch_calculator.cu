@@ -31,7 +31,7 @@ BatchCalculator::calculate(std::span<const OscillationParams* const> params,
         int deviceId;
         int batchOffset;
         int batchCount;
-        thrust::device_vector<OscParamsPOD>    d_params;
+        thrust::device_vector<OscParamsPOD<double>> d_params;
         thrust::device_vector<double>           d_results;
         std::vector<double, PinnedAllocator<double>> h_results;
         cudaStream_t computeStream = nullptr;
@@ -63,13 +63,13 @@ BatchCalculator::calculate(std::span<const OscillationParams* const> params,
         states[g].d_results.resize(singleResultSize * static_cast<std::size_t>(count));
         states[g].h_results.resize(singleResultSize * static_cast<std::size_t>(count));
 
-        std::vector<OscParamsPOD> podBuf(static_cast<std::size_t>(count));
+        std::vector<OscParamsPOD<double>> podBuf(static_cast<std::size_t>(count));
         const bool antineutrino = (type == NeutrinoType::Antineutrino);
         for (int i = 0; i < count; ++i)
-            podBuf[i] = params[states[g].batchOffset + i]->computePOD(antineutrino);
+            podBuf[i] = params[states[g].batchOffset + i]->computePOD<double>(antineutrino);
 
         cudaMemcpyAsync(thrust::raw_pointer_cast(states[g].d_params.data()),
-                        podBuf.data(), sizeof(OscParamsPOD) * count,
+                        podBuf.data(), sizeof(OscParamsPOD<double>) * count,
                         cudaMemcpyHostToDevice, states[g].computeStream);
 
         thrust::device_vector<double> d_cos(grid_->cosines().begin(),   grid_->cosines().end());
@@ -78,7 +78,7 @@ BatchCalculator::calculate(std::span<const OscillationParams* const> params,
         thrust::device_vector<double> d_rho(modelDensities_.begin(),     modelDensities_.end());
         thrust::device_vector<int>    d_ml (maxlayers_.begin(),          maxlayers_.end());
 
-        kernels::launchOscillationKernel(
+        kernels::launchOscillationKernel<double>(
             type,
             thrust::raw_pointer_cast(d_cos.data()), nCos_,
             thrust::raw_pointer_cast(d_e.data()),   nE_,
