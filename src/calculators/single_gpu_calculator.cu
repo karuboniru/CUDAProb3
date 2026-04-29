@@ -127,7 +127,8 @@ ResultView SingleGPUCalculator::makeResultView() const noexcept {
 
 void SingleGPUCalculator::calculateAsync(const OscillationParams& params, NeutrinoType type) {
     cudaSetDevice(deviceId_);
-    const OscParamsPOD pod = params.computePOD();
+    const bool antineutrino = (type == NeutrinoType::Antineutrino);
+    const OscParamsPOD pod = params.computePOD(antineutrino);
     launchKernel(pod, type, 1, computeStream_);
     cudaEventRecord(computeDone_, computeStream_);
     cudaStreamWaitEvent(xferStream_, computeDone_, 0);

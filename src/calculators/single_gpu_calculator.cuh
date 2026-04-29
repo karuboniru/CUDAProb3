@@ -72,6 +72,13 @@ public:
         return { h_results_.data(), h_results_.size() };
     }
 
+    // Raw device pointer to results buffer.
+    // Layout: [channel][cosine][energy] where channel = ProbType enum order.
+    // Valid after calculate() or calculateAsync() kernel completes.
+    [[nodiscard]] const double* getDeviceResultPtr() const noexcept {
+        return thrust::raw_pointer_cast(d_results_.data());
+    }
+
     // Sub-grid support: cosine offset (for multi-GPU cosine split).
     int cosineOffset = 0;
     int cosineCount  = -1;

@@ -23,10 +23,14 @@ public:
     [[nodiscard]] double dm23sq()  const noexcept { return dm23sq_; }
 
     // Build the full kernel-ready parameter block.
-    // Vacuum mass ordering is type-independent (no matter potential in ordering step).
-    [[nodiscard]] OscParamsPOD computePOD() const {
+    // For antineutrinos, the PMNS matrix is complex-conjugated (U -> U*),
+    // which is equivalent to flipping the sign of deltaCP.
+    [[nodiscard]] OscParamsPOD computePOD(bool antineutrino = false) const {
         OscParamsPOD p{};
         fillMixMatrix(p);
+        if (antineutrino) {
+            for (int i = 0; i < 9; ++i) p.mix_im[i] = -p.mix_im[i];
+        }
         fillMassDifferences(p);
         fillAxfac(p);
         fillMassOrder(p);

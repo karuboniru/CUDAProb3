@@ -10,7 +10,8 @@ namespace cudaprob3 {
 std::expected<ResultView, std::string>
 SingleGPUCalculator::calculate(const OscillationParams& params, NeutrinoType type) {
     cudaSetDevice(deviceId_);
-    const OscParamsPOD pod = params.computePOD();
+    const bool antineutrino = (type == NeutrinoType::Antineutrino);
+    const OscParamsPOD pod = params.computePOD(antineutrino);
 
     if (useCUDAGraphs_ && graphCaptured_) {
         cudaMemcpy(thrust::raw_pointer_cast(d_params_.data()),

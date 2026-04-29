@@ -64,8 +64,9 @@ BatchCalculator::calculate(std::span<const OscillationParams* const> params,
         states[g].h_results.resize(singleResultSize * static_cast<std::size_t>(count));
 
         std::vector<OscParamsPOD> podBuf(static_cast<std::size_t>(count));
+        const bool antineutrino = (type == NeutrinoType::Antineutrino);
         for (int i = 0; i < count; ++i)
-            podBuf[i] = params[states[g].batchOffset + i]->computePOD();
+            podBuf[i] = params[states[g].batchOffset + i]->computePOD(antineutrino);
 
         cudaMemcpyAsync(thrust::raw_pointer_cast(states[g].d_params.data()),
                         podBuf.data(), sizeof(OscParamsPOD) * count,

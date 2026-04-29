@@ -45,6 +45,7 @@ target_link_libraries(cudaprob3
 
 set_target_properties(cudaprob3 PROPERTIES
     CUDA_SEPARABLE_COMPILATION    ON
+    CUDA_RESOLVE_DEVICE_SYMBOLS   ON
     CUDA_ARCHITECTURES            "80;86;89;90"  # sm_70 dropped in CUDA 13.x
     POSITION_INDEPENDENT_CODE     ON
 )
