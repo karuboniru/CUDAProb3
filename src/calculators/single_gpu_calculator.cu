@@ -144,6 +144,21 @@ void SingleGPUCalculator<T>::calculateAsync(const OscillationParams& params, Neu
     cudaEventRecord(xferDone_, xferStream_);
 }
 
+template<typename T>
+void SingleGPUCalculator<T>::calculateDeviceOnly(const OscillationParams& params, NeutrinoType type) {
+    cudaSetDevice(deviceId_);
+    const bool antineutrino = (type == NeutrinoType::Antineutrino);
+    const OscParamsPOD<T> pod = params.computePOD<T>(antineutrino);
+    if (useCUDAGraphs_ && graphCaptured_) {
+        cudaMemcpy(thrust::raw_pointer_cast(d_params_.data()),
+                   &pod, sizeof(OscParamsPOD<T>), cudaMemcpyHostToDevice);
+        graph_.replay(computeStream_);
+    } else {
+        launchKernel(pod, type, 1, computeStream_);
+    }
+    cudaEventRecord(computeDone_, computeStream_);
+}
+
 // Explicit instantiations for the CUDA-compiled member functions.
 template class SingleGPUCalculator<float>;
 template class SingleGPUCalculator<double>;

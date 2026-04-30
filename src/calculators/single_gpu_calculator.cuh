@@ -71,8 +71,14 @@ public:
     // Asynchronous: returns immediately. Call waitForResults() to block.
     void calculateAsync(const OscillationParams& params, NeutrinoType type);
 
+    // Device-only: launches kernel on computeStream_, no D2H. d_results_ is
+    // valid on the device after the kernel completes on computeStream_.
+    void calculateDeviceOnly(const OscillationParams& params, NeutrinoType type);
+
     [[nodiscard]] int nCosines()  const noexcept { return nCos_; }
     [[nodiscard]] int nEnergies() const noexcept { return nE_; }
+
+    [[nodiscard]] cudaStream_t getComputeStream() const noexcept { return computeStream_; }
 
     [[nodiscard]] std::span<const T> rawResults() const noexcept {
         return { h_results_.data(), h_results_.size() };
