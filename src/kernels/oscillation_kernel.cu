@@ -29,7 +29,7 @@ static constexpr int kMaxLayers = 64;
 
 template<typename T>
 __global__
-__launch_bounds__(256, 4)
+__launch_bounds__(256)
 void oscillationKernel(
     NeutrinoType type,
     const double* __restrict__ d_cosines,    int nCos,
